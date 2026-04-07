@@ -13,6 +13,7 @@
 		87407CA53793046DB2BAD28D /* VocabReaderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB19BA7AB5BAB76CBC126E65 /* VocabReaderApp.swift */; };
 		C1C62EECC0486B33BAE72404 /* ArticleScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953ED79C948B09D4A7938718 /* ArticleScene.swift */; };
 		CA57B60AC6AE6D2E03347DFA /* Article.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588DF7FC3C78B7F1F47A0763 /* Article.swift */; };
+		E04F87C91A5DEDB2F4EB93D9 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */; };
 		E98AF08372776E0AF462D608 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */; };
 /* End PBXBuildFile section */
 
@@ -35,6 +36,7 @@
 		5E0F2FED1161653A784E1F40 /* KeychainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTests.swift; sourceTree = "<group>"; };
 		80917AFAE6D77CD66C0A04B1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		953ED79C948B09D4A7938718 /* ArticleScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleScene.swift; sourceTree = "<group>"; };
+		975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		98F939BADEF8F2F1F4E1D43B /* VocabReader.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VocabReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CB19BA7AB5BAB76CBC126E65 /* VocabReaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabReaderApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -74,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */,
+				975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -173,6 +176,7 @@
 				CA57B60AC6AE6D2E03347DFA /* Article.swift in Sources */,
 				C1C62EECC0486B33BAE72404 /* ArticleScene.swift in Sources */,
 				E98AF08372776E0AF462D608 /* Keychain.swift in Sources */,
+				E04F87C91A5DEDB2F4EB93D9 /* SettingsStore.swift in Sources */,
 				87407CA53793046DB2BAD28D /* VocabReaderApp.swift in Sources */,
 				295797B43118633453F26F3B /* VocabWord.swift in Sources */,
 			);
