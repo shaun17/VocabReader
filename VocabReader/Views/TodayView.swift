@@ -92,10 +92,3 @@ struct TodayView: View {
         }
     }
 }
-
-// Stub — replaced in Task 10
-struct ArticleReaderView: View {
-    let article: Article
-    let maiMemo: MaiMemoServiceProtocol
-    var body: some View { Text(article.content) }
-}
