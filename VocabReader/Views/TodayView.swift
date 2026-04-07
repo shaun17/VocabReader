@@ -6,13 +6,16 @@ final class TodayViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
-    private let generator: ArticleGenerator
-
-    init(generator: ArticleGenerator) {
-        self.generator = generator
-    }
-
     func loadArticles() async {
+        let settings = SettingsStore.shared
+        let maiMemo = MaiMemoService(token: settings.maiMemoToken)
+        let llm = LLMService(config: LLMConfig(
+            apiKey: settings.llmAPIKey,
+            baseURL: settings.llmBaseURL,
+            model: settings.llmModel
+        ))
+        let generator = ArticleGenerator(maiMemo: maiMemo, llm: llm)
+
         isLoading = true
         error = nil
         do {
@@ -25,13 +28,9 @@ final class TodayViewModel: ObservableObject {
 }
 
 struct TodayView: View {
-    @StateObject private var viewModel: TodayViewModel
+    @StateObject private var viewModel = TodayViewModel()
     @State private var showSettings = false
     @State private var selectedArticle: Article?
-
-    init(generator: ArticleGenerator) {
-        _viewModel = StateObject(wrappedValue: TodayViewModel(generator: generator))
-    }
 
     var body: some View {
         NavigationStack {
@@ -79,7 +78,9 @@ struct TodayView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showSettings) {
+            .sheet(isPresented: $showSettings, onDismiss: {
+                Task { await viewModel.loadArticles() }
+            }) {
                 SettingsView(settings: SettingsStore.shared)
             }
             .navigationDestination(item: $selectedArticle) { article in

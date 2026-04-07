@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     var onSave: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -43,6 +44,7 @@ struct SettingsView: View {
                     Button("保存") {
                         settings.save()
                         onSave?()
+                        dismiss()
                     }
                     .disabled(!settings.isConfigured)
                 }
