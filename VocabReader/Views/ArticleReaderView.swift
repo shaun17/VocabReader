@@ -42,8 +42,8 @@ struct ArticleReaderView: View {
             }
         )
 
-        // Tokenise by whitespace, preserve trailing whitespace per token
-        let tokens = article.content.components(separatedBy: .whitespaces)
+        // Tokenise by whitespace and newlines, preserve trailing whitespace per token
+        let tokens = article.content.components(separatedBy: .whitespacesAndNewlines)
         for (i, token) in tokens.enumerated() {
             let suffix = i < tokens.count - 1 ? " " : ""
             let clean = token.trimmingCharacters(in: .punctuationCharacters).lowercased()

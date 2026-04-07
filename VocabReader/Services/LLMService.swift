@@ -26,7 +26,9 @@ final class LLMService {
     }
 
     func generateArticle(words: [VocabWord], scene: ArticleScene) async throws -> Article {
-        let url = URL(string: "\(config.baseURL)/chat/completions")!
+        guard let url = URL(string: "\(config.baseURL)/chat/completions") else {
+            throw LLMError.invalidResponse
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
