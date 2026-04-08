@@ -2,6 +2,17 @@ import XCTest
 @testable import VocabReader
 
 final class ArticleGeneratorTests: XCTestCase {
+    func testUsesTodayWordLimitOf50() async throws {
+        let mockLLM = MockLLMService { words, scene in
+            Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+        }
+        let mockMaiMemo = MockMaiMemoService(words: [])
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+
+        _ = try await generator.generateTodayArticles()
+
+        XCTAssertEqual(mockMaiMemo.lastRequestedLimit, 50)
+    }
 
     func testGroupsWordsInto20() async throws {
         var capturedBatches: [[VocabWord]] = []
@@ -36,8 +47,15 @@ final class ArticleGeneratorTests: XCTestCase {
 
 final class MockMaiMemoService: MaiMemoServiceProtocol {
     let words: [VocabWord]
+    private(set) var lastRequestedLimit: Int?
+
     init(words: [VocabWord]) { self.words = words }
-    func fetchTodayWords(limit: Int) async throws -> [VocabWord] { words }
+
+    func fetchTodayWords(limit: Int) async throws -> [VocabWord] {
+        lastRequestedLimit = limit
+        return words
+    }
+
     func fetchDefinition(vocId: String) async throws -> String? { "definition" }
 }
 

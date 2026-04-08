@@ -36,7 +36,7 @@ final class LLMServiceTests: XCTestCase {
         do {
             _ = try await service.generateArticle(words: [], scene: .news)
             XCTFail("Expected error")
-        } catch LLMError.httpError(let code) {
+        } catch LLMError.httpError(let code, _) {
             XCTAssertEqual(code, 429)
         } catch {
             XCTFail("Wrong error: \(error)")

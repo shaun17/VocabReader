@@ -5,10 +5,16 @@ final class MaiMemoServiceTests: XCTestCase {
 
     func testFetchTodayWordsParsesResponse() async throws {
         let json = """
-        {"today_items": [
-            {"voc_id": "id1", "voc_spelling": "apple", "order": 1, "is_new": false, "is_finished": false},
-            {"voc_id": "id2", "voc_spelling": "banana", "order": 2, "is_new": true, "is_finished": false}
-        ]}
+        {
+            "errors": [],
+            "data": {
+                "today_items": [
+                    {"voc_id": "id1", "voc_spelling": "apple", "order": 1, "is_new": false, "is_finished": false},
+                    {"voc_id": "id2", "voc_spelling": "banana", "order": 2, "is_new": true, "is_finished": false}
+                ]
+            },
+            "success": true
+        }
         """
         let data = Data(json.utf8)
         let session = MockURLSession(data: data, statusCode: 200)

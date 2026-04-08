@@ -4,6 +4,7 @@ final class ArticleGenerator {
     private let maiMemo: MaiMemoServiceProtocol
     private let llm: LLMServiceProtocol
     private let batchSize = 20
+    private let todayWordLimit = 50
 
     init(maiMemo: MaiMemoServiceProtocol, llm: LLMServiceProtocol) {
         self.maiMemo = maiMemo
@@ -11,7 +12,7 @@ final class ArticleGenerator {
     }
 
     func generateTodayArticles() async throws -> [Article] {
-        let words = try await maiMemo.fetchTodayWords(limit: 200)
+        let words = try await maiMemo.fetchTodayWords(limit: todayWordLimit)
         guard !words.isEmpty else { return [] }
 
         let batches = stride(from: 0, to: words.count, by: batchSize).map {

@@ -1,8 +1,17 @@
 import Foundation
 
-enum MaiMemoError: Error {
+enum MaiMemoError: Error, LocalizedError {
     case httpError(Int)
     case invalidResponse
+    case apiError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .httpError(let code): return "HTTP 错误 \(code)"
+        case .invalidResponse: return "无效的服务器响应"
+        case .apiError(let msg): return msg
+        }
+    }
 }
 
 protocol URLSessionProtocol {
@@ -39,7 +48,11 @@ final class MaiMemoService {
         guard http.statusCode == 200 else { throw MaiMemoError.httpError(http.statusCode) }
 
         let decoded = try JSONDecoder().decode(TodayItemsResponse.self, from: data)
-        return decoded.todayItems.map { VocabWord(id: $0.vocId, spelling: $0.vocSpelling) }
+        if decoded.success == false {
+            throw MaiMemoError.apiError(decoded.errors?.joined(separator: ", ") ?? "请求失败")
+        }
+
+        return decoded.items.map { VocabWord(id: $0.vocId, spelling: $0.vocSpelling) }
     }
 
     func fetchDefinition(vocId: String) async throws -> String? {
@@ -53,7 +66,7 @@ final class MaiMemoService {
         guard http.statusCode == 200 else { throw MaiMemoError.httpError(http.statusCode) }
 
         let decoded = try JSONDecoder().decode(InterpretationsResponse.self, from: data)
-        return decoded.interpretations.first?.interpretation
+        return decoded.interpretations?.first?.interpretation
     }
 }
 
@@ -62,8 +75,29 @@ extension MaiMemoService: MaiMemoServiceProtocol {}
 // MARK: - Response types (private)
 
 private struct TodayItemsResponse: Decodable {
-    let todayItems: [TodayItem]
-    enum CodingKeys: String, CodingKey { case todayItems = "today_items" }
+    let success: Bool?
+    let errors: [String]?
+    let data: TodayItemsPayload?
+    let todayItems: [TodayItem]?
+
+    enum CodingKeys: String, CodingKey {
+        case success
+        case errors
+        case data
+        case todayItems = "today_items"
+    }
+
+    var items: [TodayItem] {
+        data?.todayItems ?? todayItems ?? []
+    }
+}
+
+private struct TodayItemsPayload: Decodable {
+    let todayItems: [TodayItem]?
+
+    enum CodingKeys: String, CodingKey {
+        case todayItems = "today_items"
+    }
 }
 
 private struct TodayItem: Decodable {
@@ -76,7 +110,7 @@ private struct TodayItem: Decodable {
 }
 
 private struct InterpretationsResponse: Decodable {
-    let interpretations: [InterpretationItem]
+    let interpretations: [InterpretationItem]?
 }
 
 private struct InterpretationItem: Decodable {

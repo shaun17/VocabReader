@@ -1,9 +1,19 @@
 import Foundation
 
-enum LLMError: Error {
-    case httpError(Int)
+enum LLMError: Error, LocalizedError {
+    case httpError(Int, String?)
     case noChoices
     case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .httpError(let code, let body):
+            if let body { return "LLM HTTP \(code): \(body.prefix(200))" }
+            return "LLM HTTP 错误 \(code)"
+        case .noChoices: return "LLM 未返回任何内容"
+        case .invalidResponse: return "LLM 请求地址无效，请检查 Base URL"
+        }
+    }
 }
 
 struct LLMConfig {
@@ -26,7 +36,8 @@ final class LLMService {
     }
 
     func generateArticle(words: [VocabWord], scene: ArticleScene) async throws -> Article {
-        guard let url = URL(string: "\(config.baseURL)/chat/completions") else {
+        let base = config.baseURL.hasSuffix("/") ? String(config.baseURL.dropLast()) : config.baseURL
+        guard let url = URL(string: "\(base)/chat/completions") else {
             throw LLMError.invalidResponse
         }
         var request = URLRequest(url: url)
@@ -53,7 +64,10 @@ final class LLMService {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw LLMError.invalidResponse }
-        guard http.statusCode == 200 else { throw LLMError.httpError(http.statusCode) }
+        guard http.statusCode == 200 else {
+            let body = String(data: data, encoding: .utf8)
+            throw LLMError.httpError(http.statusCode, body)
+        }
 
         let decoded = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
         guard let content = decoded.choices.first?.message.content else {

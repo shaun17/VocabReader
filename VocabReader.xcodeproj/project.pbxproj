@@ -20,11 +20,13 @@
 		87407CA53793046DB2BAD28D /* VocabReaderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB19BA7AB5BAB76CBC126E65 /* VocabReaderApp.swift */; };
 		908CFE01C97DBB74BB4A0C1C /* MaiMemoServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8C49615EB8764097A4BD3C1 /* MaiMemoServiceTests.swift */; };
 		A18D9BF0E481B1B99FDEA59E /* ArticleReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E71407948724FBACAC34100 /* ArticleReaderView.swift */; };
+
 		C1C62EECC0486B33BAE72404 /* ArticleScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953ED79C948B09D4A7938718 /* ArticleScene.swift */; };
 		CA57B60AC6AE6D2E03347DFA /* Article.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588DF7FC3C78B7F1F47A0763 /* Article.swift */; };
 		CDEA6407F6F1FDD9D16D6768 /* ArticleCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0DE6EC868502C68C49A0BB /* ArticleCardView.swift */; };
 		E04F87C91A5DEDB2F4EB93D9 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */; };
 		E98AF08372776E0AF462D608 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */; };
+
 		FFF573B0D331AF4157990E85 /* MaiMemoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD124C687676564664A87744 /* MaiMemoService.swift */; };
 /* End PBXBuildFile section */
 
@@ -40,6 +42,7 @@
 
 /* Begin PBXFileReference section */
 		0135BEC1FC11DD7D6E988848 /* VocabReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabReaderTests.swift; sourceTree = "<group>"; };
+
 		1CC5EDAB16536B3B98C654B8 /* LLMServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMServiceTests.swift; sourceTree = "<group>"; };
 		21AE130B2D4550AC2713076C /* VocabWord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabWord.swift; sourceTree = "<group>"; };
 		2A969EF4CF9F34DF79F0DBCE /* ArticleGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleGenerator.swift; sourceTree = "<group>"; };
@@ -50,6 +53,7 @@
 		568859BABA2A87F3AFF4C8A6 /* WordDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDetailSheet.swift; sourceTree = "<group>"; };
 		588DF7FC3C78B7F1F47A0763 /* Article.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Article.swift; sourceTree = "<group>"; };
 		5E0F2FED1161653A784E1F40 /* KeychainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTests.swift; sourceTree = "<group>"; };
+
 		80917AFAE6D77CD66C0A04B1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8E71407948724FBACAC34100 /* ArticleReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleReaderView.swift; sourceTree = "<group>"; };
 		94ED66C0F0A28E8AA7897EB5 /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
