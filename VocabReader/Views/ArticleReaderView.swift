@@ -142,7 +142,7 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         textView.isSelectable = true
         textView.isScrollEnabled = false
         textView.backgroundColor = .clear
-        textView.font = UIFont.preferredFont(forTextStyle: .body)
+        textView.font = bodyFont
         textView.textColor = .label
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
@@ -180,13 +180,30 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         paragraphStyle.lineSpacing = 6
         mutable.addAttribute(.paragraphStyle, value: paragraphStyle, range: fullRange)
 
-        let bodyFont = UIFont.preferredFont(forTextStyle: .body)
+        let bodyFont = self.bodyFont
         mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
             guard value == nil else { return }
             mutable.addAttribute(.font, value: bodyFont, range: range)
         }
 
+        let inlineActionFont = UIFontMetrics(forTextStyle: .footnote)
+            .scaledFont(for: UIFont.systemFont(ofSize: 13))
+        mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
+            guard
+                let url = value as? URL,
+                url.scheme == "paragraph"
+            else { return }
+
+            mutable.addAttribute(.font, value: inlineActionFont, range: range)
+        }
+
         return mutable
+    }
+
+    private var bodyFont: UIFont {
+        let baseFont = UIFont.preferredFont(forTextStyle: .body)
+        let adjustedFont = UIFont.systemFont(ofSize: baseFont.pointSize + 1)
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: adjustedFont)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {

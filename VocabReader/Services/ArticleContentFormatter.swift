@@ -20,7 +20,7 @@ struct ArticleContentFormatter {
 
         var action = AttributedString(actionTitle)
         action.foregroundColor = .blue
-        action.font = .system(size: 13)
+        action.font = .system(size: 11)
         action.link = URL(string: "paragraph://\(paragraphIndex)")
         result += action
 
