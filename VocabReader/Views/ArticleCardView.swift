@@ -29,7 +29,6 @@ struct ArticleCardView: View {
 
     private var sceneIcon: String {
         switch article.scene {
-        case .news:     return "newspaper"
         case .dialogue: return "bubble.left.and.bubble.right"
         case .story:    return "book"
         case .science:  return "flask"

@@ -2,24 +2,30 @@ import SwiftUI
 
 struct WordDetailSheet: View {
     let word: VocabWord
-    let maiMemo: MaiMemoServiceProtocol
+    @StateObject private var viewModel: WordDetailViewModel
 
-    @State private var definition: String?
-    @State private var isLoading = true
+    init(word: VocabWord, translator: WordTranslatorServiceProtocol) {
+        self.word = word
+        _viewModel = StateObject(wrappedValue: WordDetailViewModel(word: word, translator: translator))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(word.spelling)
                 .font(.title2.bold())
 
-            if isLoading {
+            if viewModel.isLoading {
                 ProgressView()
-            } else if let definition {
-                Text(definition)
+            } else if let translation = viewModel.translation {
+                Text(translation)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            } else if let error = viewModel.error {
+                Text(error)
                     .font(.body)
                     .foregroundStyle(.secondary)
             } else {
-                Text("暂无释义")
+                Text("暂无翻译")
                     .font(.body)
                     .foregroundStyle(.tertiary)
             }
@@ -29,8 +35,7 @@ struct WordDetailSheet: View {
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task {
-            definition = try? await maiMemo.fetchDefinition(vocId: word.id)
-            isLoading = false
+            await viewModel.loadTranslation()
         }
     }
 }

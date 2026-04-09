@@ -1,40 +1,155 @@
 import Foundation
+import os
+
+protocol TodayArticlePagingSession: AnyObject {
+    func hasMoreArticles() async throws -> Bool
+    func loadNextArticle() async throws -> Article?
+}
+
+protocol TodayArticleGenerating {
+    func generateTodayArticles() async throws -> [Article]
+    func generateTodayArticlesStream() -> AsyncThrowingStream<Article, Error>
+    func makePagingSession() -> TodayArticlePagingSession
+    func makePagingSession(startingAtConsumedWordCount: Int) -> TodayArticlePagingSession
+}
 
 final class ArticleGenerator {
+    fileprivate static let logger = Logger(subsystem: "com.vocabreader.app", category: "ArticleGenerator")
+
     private let maiMemo: MaiMemoServiceProtocol
     private let llm: LLMServiceProtocol
-    private let batchSize = 20
-    private let todayWordLimit = 50
+    private let batchSize: Int
+    private let todayWordLimit: Int
+    private let interBatchDelayNanoseconds: UInt64 = 350_000_000
 
-    init(maiMemo: MaiMemoServiceProtocol, llm: LLMServiceProtocol) {
+    init(
+        maiMemo: MaiMemoServiceProtocol,
+        llm: LLMServiceProtocol,
+        batchSize: Int = 10,
+        todayWordLimit: Int = 50
+    ) {
         self.maiMemo = maiMemo
         self.llm = llm
+        self.batchSize = batchSize
+        self.todayWordLimit = todayWordLimit
+    }
+
+    func makePagingSession() -> TodayArticlePagingSession {
+        makePagingSession(startingAtConsumedWordCount: 0)
+    }
+
+    func makePagingSession(startingAtConsumedWordCount: Int) -> TodayArticlePagingSession {
+        PagingSession(
+            maiMemo: maiMemo,
+            llm: llm,
+            batchSize: batchSize,
+            todayWordLimit: todayWordLimit,
+            interBatchDelayNanoseconds: interBatchDelayNanoseconds,
+            consumedWordCount: startingAtConsumedWordCount
+        )
     }
 
     func generateTodayArticles() async throws -> [Article] {
-        let words = try await maiMemo.fetchTodayWords(limit: todayWordLimit)
-        guard !words.isEmpty else { return [] }
+        var articles: [Article] = []
+        let session = makePagingSession()
 
-        let batches = stride(from: 0, to: words.count, by: batchSize).map {
-            Array(words[$0..<min($0 + batchSize, words.count)])
+        while let article = try await session.loadNextArticle() {
+            articles.append(article)
         }
-        let scenes = ArticleScene.allCases
 
-        return try await withThrowingTaskGroup(of: Article.self) { group in
-            for (index, batch) in batches.enumerated() {
-                let scene = scenes[index % scenes.count]
-                group.addTask {
-                    try await self.llm.generateArticle(words: batch, scene: scene)
+        return sortArticles(articles)
+    }
+
+    func generateTodayArticlesStream() -> AsyncThrowingStream<Article, Error> {
+        let session = makePagingSession()
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    while let article = try await session.loadNextArticle() {
+                        continuation.yield(article)
+                    }
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
                 }
             }
-            var articles: [Article] = []
-            for try await article in group {
-                articles.append(article)
-            }
-            return articles.sorted { a, b in
-                guard let firstA = a.targetWords.first, let firstB = b.targetWords.first else { return false }
-                return firstA.spelling < firstB.spelling
-            }
         }
+    }
+
+    private func sortArticles(_ articles: [Article]) -> [Article] {
+        articles.sorted { a, b in
+            guard let firstA = a.targetWords.first, let firstB = b.targetWords.first else { return false }
+            return firstA.spelling < firstB.spelling
+        }
+    }
+}
+
+extension ArticleGenerator: TodayArticleGenerating {}
+
+private final class PagingSession: TodayArticlePagingSession {
+    private let maiMemo: MaiMemoServiceProtocol
+    private let llm: LLMServiceProtocol
+    private let batchSize: Int
+    private let todayWordLimit: Int
+    private let interBatchDelayNanoseconds: UInt64
+    private let scenes = ArticleScene.allCases
+    private let consumedWordCount: Int
+
+    private var batches: [[VocabWord]]?
+    private var nextBatchIndex = 0
+
+    init(
+        maiMemo: MaiMemoServiceProtocol,
+        llm: LLMServiceProtocol,
+        batchSize: Int,
+        todayWordLimit: Int,
+        interBatchDelayNanoseconds: UInt64,
+        consumedWordCount: Int
+    ) {
+        self.maiMemo = maiMemo
+        self.llm = llm
+        self.batchSize = batchSize
+        self.todayWordLimit = todayWordLimit
+        self.interBatchDelayNanoseconds = interBatchDelayNanoseconds
+        self.consumedWordCount = consumedWordCount
+    }
+
+    func hasMoreArticles() async throws -> Bool {
+        let batches = try await resolveBatches()
+        return nextBatchIndex < batches.count
+    }
+
+    func loadNextArticle() async throws -> Article? {
+        let batches = try await resolveBatches()
+        guard nextBatchIndex < batches.count else { return nil }
+
+        if nextBatchIndex > 0 {
+            try await Task.sleep(nanoseconds: interBatchDelayNanoseconds)
+        }
+
+        let batch = batches[nextBatchIndex]
+        let scene = scenes[nextBatchIndex % scenes.count]
+        ArticleGenerator.logger.info(
+            "Generating batch \(self.nextBatchIndex + 1, privacy: .public)/\(batches.count, privacy: .public) with \(batch.count, privacy: .public) words"
+        )
+
+        nextBatchIndex += 1
+        return try await llm.generateArticle(words: batch, scene: scene)
+    }
+
+    private func resolveBatches() async throws -> [[VocabWord]] {
+        if let batches {
+            return batches
+        }
+
+        let words = try await maiMemo.fetchTodayWords(limit: todayWordLimit)
+        let startIndex = min(max(consumedWordCount, 0), words.count)
+        let remainingWords = Array(words.dropFirst(startIndex))
+        let batches = stride(from: 0, to: remainingWords.count, by: batchSize).map {
+            Array(remainingWords[$0..<min($0 + batchSize, remainingWords.count)])
+        }
+        self.batches = batches
+        return batches
     }
 }

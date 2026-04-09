@@ -2,32 +2,33 @@ import XCTest
 @testable import VocabReader
 
 final class ArticleGeneratorTests: XCTestCase {
-    func testUsesTodayWordLimitOf50() async throws {
+    func testUsesConfiguredTodayWordLimit() async throws {
         let mockLLM = MockLLMService { words, scene in
             Article(id: UUID(), scene: scene, content: "text", targetWords: words)
         }
         let mockMaiMemo = MockMaiMemoService(words: [])
-        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, todayWordLimit: 30)
 
         _ = try await generator.generateTodayArticles()
 
-        XCTAssertEqual(mockMaiMemo.lastRequestedLimit, 50)
+        XCTAssertEqual(mockMaiMemo.lastRequestedLimit, 30)
     }
 
-    func testGroupsWordsInto20() async throws {
-        var capturedBatches: [[VocabWord]] = []
+    func testGroupsWordsUsingConfiguredWordsPerArticle() async throws {
+        let collector = BatchCollector()
         let mockLLM = MockLLMService { words, scene in
-            capturedBatches.append(words)
+            await collector.append(words)
             return Article(id: UUID(), scene: scene, content: "text", targetWords: words)
         }
         let words = (1...45).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
-        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, batchSize: 15)
 
         _ = try await generator.generateTodayArticles()
 
+        let capturedBatches = await collector.batches
         let sortedCounts = capturedBatches.map { $0.count }.sorted()
-        XCTAssertEqual(sortedCounts, [5, 20, 20])
+        XCTAssertEqual(sortedCounts, [15, 15, 15])
     }
 
     func testReturnsEmptyWhenNoWords() async throws {
@@ -40,6 +41,105 @@ final class ArticleGeneratorTests: XCTestCase {
         let articles = try await generator.generateTodayArticles()
 
         XCTAssertTrue(articles.isEmpty)
+    }
+
+    func testGeneratesArticlesOneBatchAtATime() async throws {
+        let tracker = ConcurrentCallTracker()
+        let mockLLM = MockLLMService { words, scene in
+            try await tracker.track {
+                try await Task.sleep(nanoseconds: 50_000_000)
+                return Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+            }
+        }
+        let words = (1...50).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+
+        _ = try await generator.generateTodayArticles()
+
+        let maxConcurrentCalls = await tracker.maxConcurrentCalls
+        XCTAssertEqual(maxConcurrentCalls, 1)
+    }
+
+    func testGenerateTodayArticlesStreamYieldsBeforeAllBatchesFinish() async throws {
+        let firstArticleDelivered = XCTestExpectation(description: "first article delivered")
+        let mockLLM = MockLLMService { words, scene in
+            if words.first?.spelling == "word11" {
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+            return Article(id: UUID(), scene: scene, content: words.map(\.spelling).joined(separator: ","), targetWords: words)
+        }
+        let words = (1...20).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+
+        let startedAt = Date()
+        let stream = generator.generateTodayArticlesStream()
+        var iterator = stream.makeAsyncIterator()
+
+        let firstArticle = try await iterator.next()
+        XCTAssertNotNil(firstArticle)
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.45)
+        firstArticleDelivered.fulfill()
+    }
+
+    func testPagingSessionLoadsOneBatchPerRequest() async throws {
+        let collector = BatchCollector()
+        let mockLLM = MockLLMService { words, scene in
+            await collector.append(words)
+            return Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+        }
+        let words = (1...20).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+        let session = generator.makePagingSession()
+
+        let firstArticle = try await session.loadNextArticle()
+        let batchCountAfterFirstLoad = await collector.batches.count
+
+        XCTAssertNotNil(firstArticle)
+        XCTAssertEqual(batchCountAfterFirstLoad, 1)
+
+        let secondArticle = try await session.loadNextArticle()
+        let batchCountAfterSecondLoad = await collector.batches.count
+
+        XCTAssertNotNil(secondArticle)
+        XCTAssertEqual(batchCountAfterSecondLoad, 2)
+    }
+
+    func testPagingSessionReturnsNilAfterLastBatch() async throws {
+        let mockLLM = MockLLMService { words, scene in
+            Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+        }
+        let words = (1...10).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
+        let session = generator.makePagingSession()
+
+        _ = try await session.loadNextArticle()
+        let nextArticle = try await session.loadNextArticle()
+
+        XCTAssertNil(nextArticle)
+    }
+}
+
+actor BatchCollector {
+    private(set) var batches: [[VocabWord]] = []
+
+    func append(_ words: [VocabWord]) {
+        batches.append(words)
+    }
+}
+
+actor ConcurrentCallTracker {
+    private(set) var maxConcurrentCalls = 0
+    private var activeCalls = 0
+
+    func track<T>(_ operation: () async throws -> T) async rethrows -> T {
+        activeCalls += 1
+        maxConcurrentCalls = max(maxConcurrentCalls, activeCalls)
+        defer { activeCalls -= 1 }
+        return try await operation()
     }
 }
 

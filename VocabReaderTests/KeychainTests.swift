@@ -3,29 +3,34 @@ import XCTest
 
 final class KeychainTests: XCTestCase {
     let testKey = "test.vocabreader.key"
+    let store = KeychainStore(
+        service: "com.vocabreader.secure-storage.tests.keychain-tests",
+        defaults: UserDefaults(suiteName: "com.vocabreader.tests.keychain-tests") ?? .standard,
+        fallbackPrefix: "com.vocabreader.secure-storage.tests.keychain-tests.fallback."
+    )
 
     override func tearDown() {
-        Keychain.delete(key: testKey)
+        store.delete(key: testKey)
     }
 
     func testSaveAndLoad() {
-        XCTAssertTrue(Keychain.save("secret", key: testKey))
-        XCTAssertEqual(Keychain.load(key: testKey), "secret")
+        XCTAssertTrue(store.save("secret", key: testKey))
+        XCTAssertEqual(store.load(key: testKey), "secret")
     }
 
     func testOverwrite() {
-        Keychain.save("old", key: testKey)
-        Keychain.save("new", key: testKey)
-        XCTAssertEqual(Keychain.load(key: testKey), "new")
+        store.save("old", key: testKey)
+        store.save("new", key: testKey)
+        XCTAssertEqual(store.load(key: testKey), "new")
     }
 
     func testDeleteReturnsNil() {
-        Keychain.save("value", key: testKey)
-        Keychain.delete(key: testKey)
-        XCTAssertNil(Keychain.load(key: testKey))
+        store.save("value", key: testKey)
+        store.delete(key: testKey)
+        XCTAssertNil(store.load(key: testKey))
     }
 
     func testLoadMissingReturnsNil() {
-        XCTAssertNil(Keychain.load(key: testKey))
+        XCTAssertNil(store.load(key: testKey))
     }
 }

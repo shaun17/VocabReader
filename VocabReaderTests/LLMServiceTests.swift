@@ -34,7 +34,7 @@ final class LLMServiceTests: XCTestCase {
         let service = LLMService(config: config, session: session)
 
         do {
-            _ = try await service.generateArticle(words: [], scene: .news)
+            _ = try await service.generateArticle(words: [], scene: .science)
             XCTFail("Expected error")
         } catch LLMError.httpError(let code, _) {
             XCTAssertEqual(code, 429)
@@ -62,6 +62,130 @@ final class LLMServiceTests: XCTestCase {
         let body = try XCTUnwrap(capturedRequest?.httpBody)
         let bodyString = String(data: body, encoding: .utf8) ?? ""
         XCTAssertTrue(bodyString.contains("serendipity"), "Prompt must include word spelling")
+    }
+
+    func testGenerateArticleConfiguresRequestTimeout() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "text"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.moonshot.cn/v1",
+            model: "kimi-k2.5"
+        )
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .story)
+
+        let timeoutInterval = try XCTUnwrap(capturedRequest?.timeoutInterval)
+        XCTAssertEqual(timeoutInterval, 180, accuracy: 0.1)
+    }
+
+    func testGenerateArticleRequestsDisabledThinkingAndBoundedOutput() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "text"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.moonshot.cn/v1",
+            model: "kimi-k2.5"
+        )
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .story)
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let thinking = try XCTUnwrap(object["thinking"] as? [String: Any])
+        XCTAssertEqual(thinking["type"] as? String, "disabled")
+        XCTAssertEqual(object["max_tokens"] as? Int, 900)
+    }
+
+    func testDialoguePromptRequiresSpeakerFormatting() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "text"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .dialogue)
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("Every spoken turn must start on a new line"))
+        XCTAssertTrue(bodyString.contains("Do not collapse the dialogue into large prose paragraphs"))
+    }
+
+    func testStoryPromptRequiresParagraphsAndAccurateGrammar() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "text"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .story)
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("Use 3-5 short paragraphs separated by blank lines"))
+        XCTAssertTrue(bodyString.contains("Grammar, punctuation, and word usage must be accurate and natural"))
+        XCTAssertTrue(bodyString.contains("The article as a whole must include ALL of the listed vocabulary words"))
+    }
+
+    func testDialoguePromptDoesNotRequireEveryBlockToRepeatAllTargetWords() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "text"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(
+            words: [
+                VocabWord(id: "1", spelling: "apple"),
+                VocabWord(id: "2", spelling: "river")
+            ],
+            scene: .dialogue
+        )
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("The article as a whole must include ALL of the listed vocabulary words"))
+        XCTAssertFalse(bodyString.contains("Every paragraph must include ALL of the listed vocabulary words"))
+        XCTAssertFalse(bodyString.contains("If the format is dialogue, treat each dialogue block as a paragraph"))
+    }
+
+    func testArticleScenesDoNotContainNews() {
+        XCTAssertEqual(Set(ArticleScene.allCases), Set([.dialogue, .story, .science]))
     }
 }
 

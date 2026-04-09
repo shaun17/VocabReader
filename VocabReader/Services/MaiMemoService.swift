@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum MaiMemoError: Error, LocalizedError {
     case httpError(Int)
@@ -25,7 +26,13 @@ protocol MaiMemoServiceProtocol {
     func fetchDefinition(vocId: String) async throws -> String?
 }
 
+protocol MaiMemoConnectionTesting {
+    func testConnection() async throws
+}
+
 final class MaiMemoService {
+    private static let logger = Logger(subsystem: "com.vocabreader.app", category: "MaiMemoService")
+
     private let token: String
     private let session: URLSessionProtocol
     private let baseURL = "https://open.maimemo.com/open"
@@ -43,6 +50,8 @@ final class MaiMemoService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["limit": limit])
 
+        let startedAt = Date()
+        Self.logger.info("Fetching today words with limit \(limit, privacy: .public)")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MaiMemoError.invalidResponse }
         guard http.statusCode == 200 else { throw MaiMemoError.httpError(http.statusCode) }
@@ -52,7 +61,10 @@ final class MaiMemoService {
             throw MaiMemoError.apiError(decoded.errors?.joined(separator: ", ") ?? "请求失败")
         }
 
-        return decoded.items.map { VocabWord(id: $0.vocId, spelling: $0.vocSpelling) }
+        let words = decoded.items.map { VocabWord(id: $0.vocId, spelling: $0.vocSpelling) }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        Self.logger.info("Fetched \(words.count, privacy: .public) words in \(elapsed, privacy: .public)s")
+        return words
     }
 
     func fetchDefinition(vocId: String) async throws -> String? {
@@ -71,6 +83,12 @@ final class MaiMemoService {
 }
 
 extension MaiMemoService: MaiMemoServiceProtocol {}
+
+extension MaiMemoService: MaiMemoConnectionTesting {
+    func testConnection() async throws {
+        _ = try await fetchTodayWords(limit: 1)
+    }
+}
 
 // MARK: - Response types (private)
 
