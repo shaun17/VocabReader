@@ -2,25 +2,22 @@ import SwiftUI
 
 struct WordDetailSheet: View {
     let word: VocabWord
-    @StateObject private var viewModel: WordDetailViewModel
-
-    init(word: VocabWord, translator: WordTranslatorServiceProtocol) {
-        self.word = word
-        _viewModel = StateObject(wrappedValue: WordDetailViewModel(word: word, translator: translator))
-    }
+    let translation: String?
+    let isLoading: Bool
+    let error: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(word.spelling)
                 .font(.title2.bold())
 
-            if viewModel.isLoading {
+            if isLoading {
                 ProgressView()
-            } else if let translation = viewModel.translation {
+            } else if let translation {
                 Text(translation)
                     .font(.body)
                     .foregroundStyle(.secondary)
-            } else if let error = viewModel.error {
+            } else if let error {
                 Text(error)
                     .font(.body)
                     .foregroundStyle(.secondary)
@@ -34,8 +31,5 @@ struct WordDetailSheet: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task {
-            await viewModel.loadTranslation()
-        }
     }
 }

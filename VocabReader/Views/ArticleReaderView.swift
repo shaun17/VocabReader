@@ -1,11 +1,13 @@
 import SwiftUI
+import Translation
 
 struct ArticleReaderView: View {
     let article: Article
     let translator: WordTranslatorServiceProtocol
     let paragraphTranslator: ArticleParagraphTranslatorProtocol
 
-    @State private var selectedWord: VocabWord?
+    @State private var translationText: String = ""
+    @State private var showTranslation = false
     private let formatter = ArticleContentFormatter()
     private let extractor = ArticleParagraphExtractor()
 
@@ -19,9 +21,8 @@ struct ArticleReaderView: View {
                         formatter: formatter,
                         translator: paragraphTranslator,
                         onWordTap: { spelling in
-                            selectedWord = article.targetWords.first {
-                                $0.spelling.lowercased() == spelling
-                            }
+                            translationText = spelling
+                            showTranslation = true
                         }
                     )
                 }
@@ -30,10 +31,7 @@ struct ArticleReaderView: View {
         }
         .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $selectedWord) { word in
-            WordDetailSheet(word: word, translator: translator)
-                .presentationDetents([.fraction(0.3)])
-        }
+        .translationPresentation(isPresented: $showTranslation, text: translationText)
     }
 }
 
