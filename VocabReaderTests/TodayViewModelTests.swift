@@ -282,6 +282,52 @@ final class TodayViewModelTests: XCTestCase {
         XCTAssertEqual(factory.makeCount, 2)
     }
 
+    func testIncreasingTodayWordCountRestoresLoadMoreWithoutSessionPreflight() async {
+        let firstArticle = Article(
+            id: UUID(),
+            scene: .story,
+            content: "first",
+            targetWords: [VocabWord(id: "1", spelling: "apple")]
+        )
+        let secondArticle = Article(
+            id: UUID(),
+            scene: .science,
+            content: "second",
+            targetWords: [VocabWord(id: "2", spelling: "banana")]
+        )
+        let thirdArticle = Article(
+            id: UUID(),
+            scene: .dialogue,
+            content: "third",
+            targetWords: [VocabWord(id: "3", spelling: "river")]
+        )
+        let initialSession = MockTodayArticlePagingSession(articles: [firstArticle, secondArticle])
+        let resumedSession = ThrowingHasMorePagingSession(articles: [thirdArticle])
+        let factory = SequentialPagingGeneratorFactory(sessions: [initialSession, resumedSession])
+        let viewModel = TodayViewModel {
+            factory.makeGenerator()
+        }
+
+        await viewModel.loadArticles()
+        viewModel.setLoadMoreFooterVisible(true)
+        await viewModel.loadMoreIfNeededForListTail()
+        await viewModel.loadMoreIfNeededForListTail()
+
+        XCTAssertFalse(viewModel.shouldShowLoadMoreFooter)
+
+        await viewModel.applySettingsAfterSave(
+            previousSettings: ArticleGenerationSettings(articleWordCount: 20, wordsPerArticle: 10),
+            newSettings: ArticleGenerationSettings(articleWordCount: 30, wordsPerArticle: 10)
+        )
+
+        XCTAssertTrue(viewModel.shouldShowLoadMoreFooter)
+
+        viewModel.setLoadMoreFooterVisible(true)
+        await viewModel.loadMoreIfNeededForListTail()
+
+        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second", "third"])
+    }
+
     func testRegenerateArticlesForcesRefresh() async {
         let firstArticle = Article(
             id: UUID(),
@@ -387,6 +433,39 @@ private final class MockTodayArticlePagingSession: TodayArticlePagingSession {
     func loadNextArticle() async throws -> Article? {
         guard !remainingArticles.isEmpty else { return nil }
         return remainingArticles.removeFirst()
+    }
+}
+
+private final class ThrowingHasMorePagingSession: TodayArticlePagingSession {
+    private var remainingArticles: [Article]
+
+    init(articles: [Article]) {
+        self.remainingArticles = articles
+    }
+
+    func hasMoreArticles() async throws -> Bool {
+        throw NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "preflight failed"])
+    }
+
+    func loadNextArticle() async throws -> Article? {
+        guard !remainingArticles.isEmpty else { return nil }
+        return remainingArticles.removeFirst()
+    }
+}
+
+@MainActor
+private final class SequentialPagingGeneratorFactory {
+    private let sessions: [TodayArticlePagingSession]
+    private var nextIndex = 0
+
+    init(sessions: [TodayArticlePagingSession]) {
+        self.sessions = sessions
+    }
+
+    func makeGenerator() -> TodayArticleGenerating {
+        let index = min(nextIndex, sessions.count - 1)
+        nextIndex += 1
+        return FixedPagingGenerator(session: sessions[index])
     }
 }
 

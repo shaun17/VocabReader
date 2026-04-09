@@ -46,13 +46,7 @@ final class TodayViewModel: ObservableObject {
         let newSession = generatorFactory().makePagingSession(startingAtConsumedWordCount: consumedWordCount)
         pagingSession = newSession
         error = nil
-
-        do {
-            hasMoreArticles = try await newSession.hasMoreArticles()
-        } catch {
-            self.error = error.localizedDescription
-            hasMoreArticles = false
-        }
+        hasMoreArticles = consumedWordCount < newSettings.articleWordCount
     }
 
     private func reloadArticles(force: Bool) async {
