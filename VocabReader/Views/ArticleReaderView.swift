@@ -255,9 +255,11 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     }
 
     private var bodyFont: UIFont {
+        // 正文统一使用衬线字体，提升英文长文阅读质感并贴近杂志排版。
         let baseFont = UIFont.preferredFont(forTextStyle: .body)
-        let adjustedFont = UIFont.systemFont(ofSize: baseFont.pointSize + 1)
-        return UIFontMetrics(forTextStyle: .body).scaledFont(for: adjustedFont)
+        let serifDescriptor = baseFont.fontDescriptor.withDesign(.serif) ?? baseFont.fontDescriptor
+        let serifFont = UIFont(descriptor: serifDescriptor, size: baseFont.pointSize + 2)
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: serifFont)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {

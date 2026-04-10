@@ -17,7 +17,7 @@ struct ArticleCardView: View {
             }
 
             Text(article.content)
-                .font(.body)
+                .font(.system(.body, design: .serif))
                 .lineLimit(3)
                 .foregroundStyle(.primary)
 
