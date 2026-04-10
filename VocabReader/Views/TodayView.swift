@@ -151,18 +151,17 @@ struct TodayView: View {
                     )
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: 20) {
                             if let error = viewModel.error {
                                 Text(error)
                                     .font(.footnote)
                                     .foregroundStyle(.red)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding()
-                                    .background(.background, in: RoundedRectangle(cornerRadius: 12))
                             }
 
                             ForEach(viewModel.articles) { article in
                                 ArticleCardView(article: article)
+                                    .contentShape(Rectangle())
                                     .onTapGesture {
                                         selectedArticle = article
                                     }
@@ -182,7 +181,7 @@ struct TodayView: View {
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
+                                .padding(.vertical, 12)
                                 .onAppear {
                                     viewModel.setLoadMoreFooterVisible(true)
                                 }
@@ -191,7 +190,7 @@ struct TodayView: View {
                                 }
                             }
                         }
-                        .padding()
+                        .padding(.horizontal, 20)
                     }
                     .simultaneousGesture(
                         DragGesture(minimumDistance: 1)
@@ -203,7 +202,7 @@ struct TodayView: View {
                     )
                 }
             }
-            .background(Color.readingBackground)
+            .background { LinedPaperBackground() }
             .scrollContentBackground(.hidden)
             .navigationTitle("今日阅读")
             .toolbar {

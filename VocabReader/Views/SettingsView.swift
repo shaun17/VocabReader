@@ -15,94 +15,99 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Picker("文章主题", selection: $draft.selectedTopic) {
-                        ForEach(ArticleTopic.allCases) { topic in
-                            Text(topic.rawValue).tag(topic)
-                        }
-                    }
-                } header: {
-                    Label("主题", systemImage: "text.book.closed")
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // MARK: - 文章设置
+                    SettingsSectionHeader(title: "文章设置")
 
-                Section {
-                    ForEach(ArticleScene.allCases) { scene in
-                        Toggle(scene.rawValue, isOn: sceneEnabledBinding(for: scene))
-                    }
-                } header: {
-                    Label("体裁", systemImage: "doc.richtext")
-                } footer: {
-                    Text("至少启用一种体裁")
-                }
-
-                Section {
-                    EditableStepper(
-                        title: "今日单词数量",
-                        value: $draft.articleWordCount,
-                        range: 10...100,
-                        step: 10
-                    )
-
-                    EditableStepper(
-                        title: "每篇文章词汇量",
-                        value: $draft.wordsPerArticle,
-                        range: 5...30,
-                        step: 5
-                    )
-                } header: {
-                    Label("词汇量", systemImage: "textformat.abc")
-                } footer: {
-                    Text("今日单词数量从墨墨查询已完成记忆的单词。每篇文章词汇量控制单篇使用的单词数。")
-                }
-
-                Section {
-                    SecureField("Token", text: $draft.maiMemoToken)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                } header: {
-                    Label("墨墨背单词", systemImage: "key")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("获取路径：墨墨 App →「我的」→「更多设置」→「开放 API」复制 Token")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-
-                        SettingsActionRow(
-                            title: "测试连接",
-                            isEnabled: !draft.maiMemoToken.isEmpty,
-                            status: diagnosticsViewModel.maiMemoStatus
-                        ) {
-                            Task {
-                                await diagnosticsViewModel.testMaiMemoConnection(
-                                    using: MaiMemoService(token: draft.maiMemoToken)
-                                )
+                    SettingsLabel("文章主题")
+                    SettingsRow {
+                        Picker("主题", selection: $draft.selectedTopic) {
+                            ForEach(ArticleTopic.allCases) { topic in
+                                Text(topic.rawValue).tag(topic)
                             }
                         }
+                        .tint(.secondary)
                     }
-                }
 
-                Section {
-                    TextField("Base URL（如 https://api.openai.com/v1）",
-                              text: $draft.llmBaseURL)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                    SettingsLabel("文章体裁")
+                    ForEach(ArticleScene.allCases) { scene in
+                        SettingsRow {
+                            Toggle(scene.rawValue, isOn: sceneEnabledBinding(for: scene))
+                                .tint(Color.readingTitle)
+                        }
+                    }
 
-                    SecureField("API Key", text: $draft.llmAPIKey)
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                    SettingsHint("至少启用一种体裁")
 
-                    TextField("模型名称（如 gpt-4o）", text: $draft.llmModel)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                } header: {
-                    Label("AI 模型", systemImage: "cpu")
-                } footer: {
-                    SettingsActionRow(
-                        title: "测试连接",
+                    SettingsRow {
+                        EditableStepper(
+                            title: "今日单词",
+                            value: $draft.articleWordCount,
+                            range: 10...100,
+                            step: 10
+                        )
+                    }
+
+                    SettingsRow {
+                        EditableStepper(
+                            title: "每篇词汇",
+                            value: $draft.wordsPerArticle,
+                            range: 5...30,
+                            step: 5
+                        )
+                    }
+
+                    // MARK: - 连接
+                    SettingsSectionHeader(title: "连接")
+
+                    SettingsRow {
+                        UnderlinedTextField(
+                            label: "墨墨 Token",
+                            text: $draft.maiMemoToken,
+                            isSecure: true
+                        )
+                    }
+
+                    SettingsHint("获取路径：墨墨 App \u{2192}「我的」\u{2192}「更多设置」\u{2192}「开放 API」复制 Token")
+
+                    SettingsConnectionStatus(
+                        isEnabled: !draft.maiMemoToken.isEmpty,
+                        status: diagnosticsViewModel.maiMemoStatus
+                    ) {
+                        Task {
+                            await diagnosticsViewModel.testMaiMemoConnection(
+                                using: MaiMemoService(token: draft.maiMemoToken)
+                            )
+                        }
+                    }
+
+                    SettingsRow {
+                        UnderlinedTextField(
+                            label: "Base URL",
+                            text: $draft.llmBaseURL,
+                            placeholder: "https://api.openai.com/v1",
+                            keyboardType: .URL
+                        )
+                    }
+
+                    SettingsRow {
+                        UnderlinedTextField(
+                            label: "API Key",
+                            text: $draft.llmAPIKey,
+                            isSecure: true
+                        )
+                    }
+
+                    SettingsRow {
+                        UnderlinedTextField(
+                            label: "模型",
+                            text: $draft.llmModel,
+                            placeholder: "gpt-4o"
+                        )
+                    }
+
+                    SettingsConnectionStatus(
                         isEnabled: !(draft.llmAPIKey.isEmpty || draft.llmBaseURL.isEmpty || draft.llmModel.isEmpty),
                         status: diagnosticsViewModel.llmStatus
                     ) {
@@ -112,16 +117,17 @@ struct SettingsView: View {
                             )
                         }
                     }
+
+                    Spacer(minLength: 40)
                 }
+                .padding(.horizontal, 24)
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.readingBackground)
+            .background(Color.readingBackground.ignoresSafeArea())
             .navigationTitle("设置")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
-                        dismiss()
-                    }
+                    Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
@@ -136,16 +142,138 @@ struct SettingsView: View {
         }
     }
 
-    /// 为体裁开关提供双向绑定，并保证始终至少保留一个启用体裁。
     private func sceneEnabledBinding(for scene: ArticleScene) -> Binding<Bool> {
         Binding(
-            get: {
-                draft.isSceneEnabled(scene)
-            },
-            set: { isEnabled in
-                draft.setSceneEnabled(isEnabled, for: scene)
-            }
+            get: { draft.isSceneEnabled(scene) },
+            set: { isEnabled in draft.setSceneEnabled(isEnabled, for: scene) }
         )
+    }
+}
+
+// MARK: - Settings components
+
+private struct SettingsSectionHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.system(.subheadline, design: .serif))
+            .foregroundStyle(Color.readingTitle)
+            .padding(.top, 32)
+            .padding(.bottom, 12)
+    }
+}
+
+private struct SettingsLabel: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.top, 12)
+    }
+}
+
+private struct SettingsRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(.vertical, 10)
+    }
+}
+
+private struct SettingsHint: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .padding(.top, 2)
+            .padding(.bottom, 8)
+    }
+}
+
+/// 带底部下划线的输入框，视觉上更明确。
+private struct UnderlinedTextField: View {
+    let label: String
+    @Binding var text: String
+    var placeholder: String = ""
+    var isSecure: Bool = false
+    var keyboardType: UIKeyboardType = .default
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Group {
+                if isSecure {
+                    SecureField(placeholder, text: $text)
+                } else {
+                    TextField(placeholder, text: $text)
+                }
+            }
+            .font(.system(.body, design: .serif))
+            .keyboardType(keyboardType)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .padding(.bottom, 6)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.readingRule)
+                    .frame(height: 1)
+            }
+        }
+    }
+}
+
+private struct SettingsConnectionStatus: View {
+    let isEnabled: Bool
+    let status: ConnectionTestStatus
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                guard isEnabled else { return }
+                action()
+            } label: {
+                Text("测试连接")
+                    .font(.caption)
+                    .foregroundColor(isEnabled ? Color.readingTitle : .gray.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            switch status {
+            case .idle:
+                EmptyView()
+            case .testing:
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                    Text("测试中…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .success(let message):
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            case .failure(let message):
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -168,6 +296,7 @@ private struct EditableStepper: View {
     var body: some View {
         HStack {
             Text(title)
+                .font(.system(.body, design: .serif))
             Spacer()
             HStack(spacing: 0) {
                 Button {
@@ -176,15 +305,18 @@ private struct EditableStepper: View {
                     text = String(newValue)
                 } label: {
                     Image(systemName: "minus")
-                        .frame(width: 32, height: 32)
+                        .font(.caption)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(value <= range.lowerBound ? .gray.opacity(0.3) : Color.readingTitle)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .disabled(value <= range.lowerBound)
 
                 TextField("", text: $text)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.center)
-                    .frame(width: 44)
+                    .font(.system(.body, design: .serif))
+                    .frame(width: 40)
                     .focused($isFocused)
                     .onChange(of: isFocused) { _, focused in
                         if !focused { commitText() }
@@ -197,9 +329,11 @@ private struct EditableStepper: View {
                     text = String(newValue)
                 } label: {
                     Image(systemName: "plus")
-                        .frame(width: 32, height: 32)
+                        .font(.caption)
+                        .frame(width: 28, height: 28)
+                        .foregroundColor(value >= range.upperBound ? .gray.opacity(0.3) : Color.readingTitle)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .disabled(value >= range.upperBound)
             }
         }
@@ -215,68 +349,5 @@ private struct EditableStepper: View {
         let final = min(snapped, range.upperBound)
         value = final
         text = String(final)
-    }
-}
-
-private struct SettingsActionRow: View {
-    let title: String
-    let isEnabled: Bool
-    let status: ConnectionTestStatus
-    let action: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            ActionLinkText(title: title, isEnabled: isEnabled, action: action)
-            Spacer(minLength: 12)
-            ConnectionStatusRow(status: status)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-    }
-}
-
-private struct ActionLinkText: View {
-    let title: String
-    let isEnabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Text(title)
-            .font(.footnote)
-            .foregroundStyle(isEnabled ? .blue : .secondary)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard isEnabled else { return }
-                action()
-            }
-    }
-}
-
-private struct ConnectionStatusRow: View {
-    let status: ConnectionTestStatus
-
-    var body: some View {
-        switch status {
-        case .idle:
-            EmptyView()
-        case .testing:
-            HStack(spacing: 8) {
-                ProgressView()
-                Text("测试中…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        case .success(let message):
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.green)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        case .failure(let message):
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
     }
 }

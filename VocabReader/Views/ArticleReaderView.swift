@@ -38,7 +38,7 @@ struct ArticleReaderView: View {
             }
                 .padding()
         }
-        .background(Color.readingBackground)
+        .background { LinedPaperBackground() }
         .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
         .modifier(
@@ -69,31 +69,13 @@ private struct ArticleMetadataHeader: View {
     let article: Article
 
     var body: some View {
-        HStack(spacing: 8) {
-            ArticleMetadataBadge(
-                title: article.scene.rawValue,
-                systemImage: article.scene.systemImageName
-            )
-            ArticleMetadataBadge(
-                title: article.topic.rawValue,
-                systemImage: article.topic.systemImageName
-            )
+        HStack(spacing: 12) {
+            Label(article.scene.rawValue, systemImage: article.scene.systemImageName)
+            Label(article.topic.rawValue, systemImage: article.topic.systemImageName)
         }
+        .font(.caption)
+        .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct ArticleMetadataBadge: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(.secondarySystemBackground), in: Capsule())
     }
 }
 
@@ -169,8 +151,8 @@ private struct ArticleParagraphSection: View {
                     .textSelection(.enabled)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(Color.readingRule.opacity(0.3))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else if let error = viewModel.error {
                 Text(error)
                     .font(.footnote)

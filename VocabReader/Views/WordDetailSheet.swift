@@ -31,6 +31,6 @@ struct WordDetailSheet: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Color.readingBackground)
+        .background { LinedPaperBackground() }
     }
 }
