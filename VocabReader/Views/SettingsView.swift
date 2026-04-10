@@ -17,6 +17,26 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    Picker("文章主题", selection: $draft.selectedTopic) {
+                        ForEach(ArticleTopic.allCases) { topic in
+                            Text(topic.rawValue).tag(topic)
+                        }
+                    }
+                } header: {
+                    Label("主题", systemImage: "text.book.closed")
+                }
+
+                Section {
+                    ForEach(ArticleScene.allCases) { scene in
+                        Toggle(scene.rawValue, isOn: sceneEnabledBinding(for: scene))
+                    }
+                } header: {
+                    Label("体裁", systemImage: "doc.richtext")
+                } footer: {
+                    Text("至少启用一种体裁")
+                }
+
+                Section {
                     EditableStepper(
                         title: "今日单词数量",
                         value: $draft.articleWordCount,
@@ -30,20 +50,10 @@ struct SettingsView: View {
                         range: 5...30,
                         step: 5
                     )
-
-                    Picker("文章主题", selection: $draft.selectedTopic) {
-                        ForEach(ArticleTopic.allCases) { topic in
-                            Text(topic.rawValue).tag(topic)
-                        }
-                    }
-
-                    ForEach(ArticleScene.allCases) { scene in
-                        Toggle(scene.rawValue, isOn: sceneEnabledBinding(for: scene))
-                    }
                 } header: {
-                    Text("文章生成")
+                    Label("词汇量", systemImage: "textformat.abc")
                 } footer: {
-                    Text("今日单词数量表示从墨墨查询今日已经完成记忆的单词数量。每篇文章词汇量表示生成单篇文章时使用的单词数量。至少启用一种文章体裁。科技、医疗、客户、AI 主题会自动启用更强的真实性约束。")
+                    Text("今日单词数量从墨墨查询已完成记忆的单词。每篇文章词汇量控制单篇使用的单词数。")
                 }
 
                 Section {
@@ -52,15 +62,15 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 } header: {
-                    Text("墨墨 API Token")
+                    Label("墨墨背单词", systemImage: "key")
                 } footer: {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("获取路径：打开墨墨 App，进入“我的” -> “更多设置” -> “开放 API” 复制 Token。")
+                        Text("获取路径：墨墨 App →「我的」→「更多设置」→「开放 API」复制 Token")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
 
                         SettingsActionRow(
-                            title: "测试",
+                            title: "测试连接",
                             isEnabled: !draft.maiMemoToken.isEmpty,
                             status: diagnosticsViewModel.maiMemoStatus
                         ) {
@@ -89,10 +99,10 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 } header: {
-                    Text("LLM")
+                    Label("AI 模型", systemImage: "cpu")
                 } footer: {
                     SettingsActionRow(
-                        title: "测试",
+                        title: "测试连接",
                         isEnabled: !(draft.llmAPIKey.isEmpty || draft.llmBaseURL.isEmpty || draft.llmModel.isEmpty),
                         status: diagnosticsViewModel.llmStatus
                     ) {
@@ -104,6 +114,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.readingBackground)
             .navigationTitle("设置")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -117,7 +117,8 @@ final class LLMService {
         let elapsed = Date().timeIntervalSince(startedAt)
         Self.logger.info("LLM article generation finished in \(elapsed, privacy: .public)s")
 
-        return Article(id: UUID(), scene: scene, topic: topic, content: content, targetWords: words)
+        let parsed = Self.parseTitleAndBody(from: content)
+        return Article(id: UUID(), scene: scene, topic: topic, title: parsed.title, content: parsed.body, targetWords: words)
     }
 }
 
@@ -176,8 +177,23 @@ private extension LLMService {
         \(topic.factConstraintInstructions) \
         Grammar, punctuation, and word usage must be accurate and natural. \
         The writing should flow naturally. Do not bold, mark, or explain the words separately. \
-        Output only the article text, no titles or extra commentary.
+        Output the title on the first line, then a blank line, then the article text. No extra commentary.
         """
+    }
+}
+
+// MARK: - Parsing
+
+private extension LLMService {
+    /// 将 LLM 返回文本拆分为标题（第一行）和正文（剩余部分）。
+    static func parseTitleAndBody(from raw: String) -> (title: String, body: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstNewline = trimmed.firstIndex(of: "\n") else {
+            return ("", trimmed)
+        }
+        let title = String(trimmed[..<firstNewline]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = String(trimmed[firstNewline...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (title, body)
     }
 }
 

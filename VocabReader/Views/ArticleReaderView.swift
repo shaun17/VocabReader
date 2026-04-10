@@ -17,6 +17,12 @@ struct ArticleReaderView: View {
             LazyVStack(alignment: .leading, spacing: 24) {
                 ArticleMetadataHeader(article: article)
 
+                if !article.title.isEmpty {
+                    Text(article.title)
+                        .font(.system(.title, design: .serif).italic())
+                        .foregroundStyle(Color.readingTitle)
+                }
+
                 ForEach(extractor.extract(from: article)) { paragraph in
                     ArticleParagraphSection(
                         paragraph: paragraph,
@@ -32,6 +38,7 @@ struct ArticleReaderView: View {
             }
                 .padding()
         }
+        .background(Color.readingBackground)
         .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
         .modifier(

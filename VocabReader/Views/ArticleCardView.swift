@@ -16,6 +16,12 @@ struct ArticleCardView: View {
                 )
             }
 
+            if !article.title.isEmpty {
+                Text(article.title)
+                    .font(.system(.headline, design: .serif).italic())
+                    .foregroundStyle(Color.readingTitle)
+            }
+
             Text(article.content)
                 .font(.system(.body, design: .serif))
                 .lineLimit(3)

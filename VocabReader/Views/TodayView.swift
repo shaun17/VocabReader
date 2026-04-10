@@ -133,13 +133,13 @@ struct TodayView: View {
                 if viewModel.articles.isEmpty && viewModel.isLoading {
                     VStack(spacing: 16) {
                         ProgressView()
-                        Text("正在加载第一篇文章…")
+                        Text("正在生成第一篇文章…")
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = viewModel.error, viewModel.articles.isEmpty {
                     ContentUnavailableView(
-                        "加载失败",
+                        "生成失败",
                         systemImage: "exclamationmark.triangle",
                         description: Text(error)
                     )
@@ -172,11 +172,11 @@ struct TodayView: View {
                                 VStack(spacing: 8) {
                                     if viewModel.isLoadingMore {
                                         ProgressView()
-                                        Text("正在加载更多文章…")
+                                        Text("正在生成更多文章…")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     } else {
-                                        Text("继续下滑加载更多")
+                                        Text("继续下滑生成更多")
                                             .font(.footnote)
                                             .foregroundStyle(.tertiary)
                                     }
@@ -203,6 +203,8 @@ struct TodayView: View {
                     )
                 }
             }
+            .background(Color.readingBackground)
+            .scrollContentBackground(.hidden)
             .navigationTitle("今日阅读")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {

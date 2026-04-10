@@ -42,6 +42,7 @@
 		E98AF08372776E0AF462D608 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */; };
 		FBA4D211A8C4ADA9DD6D7DB6 /* TodayViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E5FEC4B037D8B7C558F85C /* TodayViewModelTests.swift */; };
 		FFF573B0D331AF4157990E85 /* MaiMemoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD124C687676564664A87744 /* MaiMemoService.swift */; };
+		B1A2C3D4E5F60718A9B0C1D2 /* ReadingTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2C1B0A9180706F5E4D3C2A1 /* ReadingTheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,6 +94,7 @@
 		D8C49615EB8764097A4BD3C1 /* MaiMemoServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiMemoServiceTests.swift; sourceTree = "<group>"; };
 		DE633BEFBE242598FEDA476F /* WordDetailViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDetailViewModelTests.swift; sourceTree = "<group>"; };
 		EC5661239146076B6B01D7B3 /* SettingsDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDraft.swift; sourceTree = "<group>"; };
+		D2C1B0A9180706F5E4D3C2A1 /* ReadingTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingTheme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -189,6 +191,7 @@
 			children = (
 				4F0DE6EC868502C68C49A0BB /* ArticleCardView.swift */,
 				8E71407948724FBACAC34100 /* ArticleReaderView.swift */,
+				D2C1B0A9180706F5E4D3C2A1 /* ReadingTheme.swift */,
 				2F8318C69E4611AE56E8D475 /* SettingsView.swift */,
 				CD3BF88515056AC1748C7C8A /* TodayView.swift */,
 				568859BABA2A87F3AFF4C8A6 /* WordDetailSheet.swift */,
@@ -287,6 +290,7 @@
 				5A69DA62E9201DEF887E2A2E /* SettingsConnectionDiagnosticsViewModel.swift in Sources */,
 				666A31B57F68FBF88C2BAF79 /* SettingsDraft.swift in Sources */,
 				E04F87C91A5DEDB2F4EB93D9 /* SettingsStore.swift in Sources */,
+				B1A2C3D4E5F60718A9B0C1D2 /* ReadingTheme.swift in Sources */,
 				635D248280E20E694911A6D1 /* SettingsView.swift in Sources */,
 				5FD3BB7EB021AB0B931D930D /* TodayView.swift in Sources */,
 				87407CA53793046DB2BAD28D /* VocabReaderApp.swift in Sources */,
