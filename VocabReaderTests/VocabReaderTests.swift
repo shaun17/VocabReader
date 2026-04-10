@@ -2,11 +2,11 @@ import XCTest
 @testable import VocabReader
 
 final class VocabReaderTests: XCTestCase {
-    func testArticleParagraphExtractorSplitsStoryByBlankLinesAndPreservesInnerLineBreaks() {
+    func testArticleParagraphExtractorSplitsNovelByBlankLinesAndPreservesInnerLineBreaks() {
         let extractor = ArticleParagraphExtractor()
         let article = Article(
             id: UUID(),
-            scene: .story,
+            scene: .novel,
             content: "The apple rolled away.\nIt stopped by the chair.\n\nThe river was quiet.\nThe sky stayed bright.",
             targetWords: [
                 VocabWord(id: "1", spelling: "apple"),
@@ -68,7 +68,7 @@ final class VocabReaderTests: XCTestCase {
     func testArticleContentFormatterAddsLinksOnlyToTargetWords() {
         let article = Article(
             id: UUID(),
-            scene: .story,
+            scene: .novel,
             content: "Apple trees grow near a river.",
             targetWords: [VocabWord(id: "1", spelling: "river")]
         )

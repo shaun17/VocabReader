@@ -42,7 +42,7 @@ struct LLMConfig {
 }
 
 protocol LLMServiceProtocol {
-    func generateArticle(words: [VocabWord], scene: ArticleScene) async throws -> Article
+    func generateArticle(words: [VocabWord], scene: ArticleScene, topic: ArticleTopic) async throws -> Article
 }
 
 protocol LLMConnectionTesting {
@@ -60,7 +60,8 @@ final class LLMService {
         self.session = session
     }
 
-    func generateArticle(words: [VocabWord], scene: ArticleScene) async throws -> Article {
+    /// 调用 LLM 生成文章，并同时注入体裁、主题和真实性约束。
+    func generateArticle(words: [VocabWord], scene: ArticleScene, topic: ArticleTopic) async throws -> Article {
         let base = config.baseURL.hasSuffix("/") ? String(config.baseURL.dropLast()) : config.baseURL
         guard let url = URL(string: "\(base)/chat/completions") else {
             throw LLMError.invalidResponse
@@ -72,16 +73,7 @@ final class LLMService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let wordList = words.map { $0.spelling }.joined(separator: ", ")
-        let prompt = """
-        Write \(scene.promptDescription) that naturally incorporates \
-        ALL of these English vocabulary words: \(wordList). \
-        Each word must appear in its original spelling. \
-        The article as a whole must include ALL of the listed vocabulary words. \
-        \(scene.formatInstructions) \
-        Grammar, punctuation, and word usage must be accurate and natural. \
-        The writing should flow naturally. Do not bold, mark, or explain the words separately. \
-        Output only the article text, no titles or extra commentary.
-        """
+        let prompt = buildArticlePrompt(words: wordList, scene: scene, topic: topic)
 
         var body: [String: Any] = [
             "model": config.model,
@@ -125,7 +117,7 @@ final class LLMService {
         let elapsed = Date().timeIntervalSince(startedAt)
         Self.logger.info("LLM article generation finished in \(elapsed, privacy: .public)s")
 
-        return Article(id: UUID(), scene: scene, content: content, targetWords: words)
+        return Article(id: UUID(), scene: scene, topic: topic, content: content, targetWords: words)
     }
 }
 
@@ -168,6 +160,24 @@ extension LLMService: LLMConnectionTesting {
               !content.isEmpty else {
             throw LLMError.noChoices
         }
+    }
+}
+
+private extension LLMService {
+    /// 拼装文章生成 Prompt，统一管理体裁、主题和真实性约束。
+    func buildArticlePrompt(words wordList: String, scene: ArticleScene, topic: ArticleTopic) -> String {
+        """
+        Write \(scene.promptDescription) about \(topic.promptDescription) that naturally incorporates \
+        ALL of these English vocabulary words: \(wordList). \
+        Each word must appear in its original spelling. \
+        The article as a whole must include ALL of the listed vocabulary words. \
+        \(scene.formatInstructions) \
+        \(topic.topicInstructions) \
+        \(topic.factConstraintInstructions) \
+        Grammar, punctuation, and word usage must be accurate and natural. \
+        The writing should flow naturally. Do not bold, mark, or explain the words separately. \
+        Output only the article text, no titles or extra commentary.
+        """
     }
 }
 

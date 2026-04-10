@@ -5,12 +5,16 @@ struct ArticleCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(article.scene.rawValue, systemImage: sceneIcon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(.quaternary, in: Capsule())
+            HStack(spacing: 8) {
+                ArticleMetadataChip(
+                    title: article.scene.rawValue,
+                    systemImage: article.scene.systemImageName
+                )
+                ArticleMetadataChip(
+                    title: article.topic.rawValue,
+                    systemImage: article.topic.systemImageName
+                )
+            }
 
             Text(article.content)
                 .font(.body)
@@ -26,12 +30,18 @@ struct ArticleCardView: View {
         .background(.background, in: RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
     }
+}
 
-    private var sceneIcon: String {
-        switch article.scene {
-        case .dialogue: return "bubble.left.and.bubble.right"
-        case .story:    return "book"
-        case .science:  return "flask"
-        }
+private struct ArticleMetadataChip: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.quaternary, in: Capsule())
     }
 }

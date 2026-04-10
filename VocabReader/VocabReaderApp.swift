@@ -9,7 +9,7 @@ struct VocabReaderApp: App {
             if settings.isConfigured {
                 TodayView()
             } else {
-                SettingsView(settings: settings, onSave: nil)
+                SettingsView(settings: settings)
             }
         }
     }

@@ -15,6 +15,8 @@ struct ArticleReaderView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
+                ArticleMetadataHeader(article: article)
+
                 ForEach(extractor.extract(from: article)) { paragraph in
                     ArticleParagraphSection(
                         paragraph: paragraph,
@@ -32,7 +34,59 @@ struct ArticleReaderView: View {
         }
         .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
-        .translationPresentation(isPresented: $showTranslation, text: translationText)
+        .modifier(
+            TranslationPresentationCompatibilityModifier(
+                isPresented: $showTranslation,
+                text: translationText
+            )
+        )
+    }
+}
+
+private struct TranslationPresentationCompatibilityModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let text: String
+
+    /// 在支持的系统版本上启用系统翻译面板，低版本则保持页面可正常编译运行。
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 17.4, *) {
+            content.translationPresentation(isPresented: $isPresented, text: text)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ArticleMetadataHeader: View {
+    let article: Article
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ArticleMetadataBadge(
+                title: article.scene.rawValue,
+                systemImage: article.scene.systemImageName
+            )
+            ArticleMetadataBadge(
+                title: article.topic.rawValue,
+                systemImage: article.topic.systemImageName
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ArticleMetadataBadge: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(.secondarySystemBackground), in: Capsule())
     }
 }
 

@@ -20,18 +20,24 @@ final class ArticleGenerator {
     private let llm: LLMServiceProtocol
     private let batchSize: Int
     private let todayWordLimit: Int
+    private let scenes: [ArticleScene]
+    private let topic: ArticleTopic
     private let interBatchDelayNanoseconds: UInt64 = 350_000_000
 
     init(
         maiMemo: MaiMemoServiceProtocol,
         llm: LLMServiceProtocol,
         batchSize: Int = 10,
-        todayWordLimit: Int = 50
+        todayWordLimit: Int = 50,
+        scenes: [ArticleScene] = ArticleScene.allCases,
+        topic: ArticleTopic = .general
     ) {
         self.maiMemo = maiMemo
         self.llm = llm
         self.batchSize = batchSize
         self.todayWordLimit = todayWordLimit
+        self.scenes = Self.normalizedScenes(scenes)
+        self.topic = topic
     }
 
     func makePagingSession() -> TodayArticlePagingSession {
@@ -44,6 +50,8 @@ final class ArticleGenerator {
             llm: llm,
             batchSize: batchSize,
             todayWordLimit: todayWordLimit,
+            scenes: scenes,
+            topic: topic,
             interBatchDelayNanoseconds: interBatchDelayNanoseconds,
             consumedWordCount: startingAtConsumedWordCount
         )
@@ -83,6 +91,12 @@ final class ArticleGenerator {
             return firstA.spelling < firstB.spelling
         }
     }
+
+    /// 规范化体裁列表，避免设置层传入空数组导致轮转崩溃。
+    private static func normalizedScenes(_ scenes: [ArticleScene]) -> [ArticleScene] {
+        let normalizedScenes = ArticleScene.allCases.filter { scenes.contains($0) }
+        return normalizedScenes.isEmpty ? ArticleScene.allCases : normalizedScenes
+    }
 }
 
 extension ArticleGenerator: TodayArticleGenerating {}
@@ -93,7 +107,8 @@ private final class PagingSession: TodayArticlePagingSession {
     private let batchSize: Int
     private let todayWordLimit: Int
     private let interBatchDelayNanoseconds: UInt64
-    private let scenes = ArticleScene.allCases
+    private let scenes: [ArticleScene]
+    private let topic: ArticleTopic
     private let consumedWordCount: Int
 
     private var batches: [[VocabWord]]?
@@ -104,6 +119,8 @@ private final class PagingSession: TodayArticlePagingSession {
         llm: LLMServiceProtocol,
         batchSize: Int,
         todayWordLimit: Int,
+        scenes: [ArticleScene],
+        topic: ArticleTopic,
         interBatchDelayNanoseconds: UInt64,
         consumedWordCount: Int
     ) {
@@ -111,6 +128,8 @@ private final class PagingSession: TodayArticlePagingSession {
         self.llm = llm
         self.batchSize = batchSize
         self.todayWordLimit = todayWordLimit
+        self.scenes = scenes
+        self.topic = topic
         self.interBatchDelayNanoseconds = interBatchDelayNanoseconds
         self.consumedWordCount = consumedWordCount
     }
@@ -135,7 +154,7 @@ private final class PagingSession: TodayArticlePagingSession {
         )
 
         nextBatchIndex += 1
-        return try await llm.generateArticle(words: batch, scene: scene)
+        return try await llm.generateArticle(words: batch, scene: scene, topic: topic)
     }
 
     private func resolveBatches() async throws -> [[VocabWord]] {

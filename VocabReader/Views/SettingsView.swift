@@ -30,10 +30,20 @@ struct SettingsView: View {
                         range: 5...30,
                         step: 5
                     )
+
+                    Picker("文章主题", selection: $draft.selectedTopic) {
+                        ForEach(ArticleTopic.allCases) { topic in
+                            Text(topic.rawValue).tag(topic)
+                        }
+                    }
+
+                    ForEach(ArticleScene.allCases) { scene in
+                        Toggle(scene.rawValue, isOn: sceneEnabledBinding(for: scene))
+                    }
                 } header: {
                     Text("文章生成")
                 } footer: {
-                    Text("今日单词数量表示从墨墨查询今日已经完成记忆的单词数量。每篇文章词汇量表示生成单篇文章时使用的单词数量。")
+                    Text("今日单词数量表示从墨墨查询今日已经完成记忆的单词数量。每篇文章词汇量表示生成单篇文章时使用的单词数量。至少启用一种文章体裁。科技、医疗、客户、AI 主题会自动启用更强的真实性约束。")
                 }
 
                 Section {
@@ -42,23 +52,23 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 } header: {
-                    HStack(spacing: 8) {
-                        Text("墨墨 API Token")
-                        Spacer(minLength: 0)
-                        Link("如何获取 Token？",
-                             destination: URL(string: "https://open.maimemo.com")!)
-                            .font(.footnote)
-                    }
+                    Text("墨墨 API Token")
                 } footer: {
-                    SettingsActionRow(
-                        title: "测试",
-                        isEnabled: !draft.maiMemoToken.isEmpty,
-                        status: diagnosticsViewModel.maiMemoStatus
-                    ) {
-                        Task {
-                            await diagnosticsViewModel.testMaiMemoConnection(
-                                using: MaiMemoService(token: draft.maiMemoToken)
-                            )
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("获取路径：打开墨墨 App，进入“我的” -> “更多设置” -> “开放 API” 复制 Token。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                        SettingsActionRow(
+                            title: "测试",
+                            isEnabled: !draft.maiMemoToken.isEmpty,
+                            status: diagnosticsViewModel.maiMemoStatus
+                        ) {
+                            Task {
+                                await diagnosticsViewModel.testMaiMemoConnection(
+                                    using: MaiMemoService(token: draft.maiMemoToken)
+                                )
+                            }
                         }
                     }
                 }
@@ -112,6 +122,18 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// 为体裁开关提供双向绑定，并保证始终至少保留一个启用体裁。
+    private func sceneEnabledBinding(for scene: ArticleScene) -> Binding<Bool> {
+        Binding(
+            get: {
+                draft.isSceneEnabled(scene)
+            },
+            set: { isEnabled in
+                draft.setSceneEnabled(isEnabled, for: scene)
+            }
+        )
     }
 }
 

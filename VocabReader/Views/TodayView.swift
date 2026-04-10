@@ -21,25 +21,18 @@ final class TodayViewModel: ObservableObject {
         await reloadArticles(force: false)
     }
 
-    func reloadIfNeededAfterSettingsSave() async {
-        guard articles.isEmpty else { return }
-        await reloadArticles(force: false)
-    }
-
     func regenerateArticles() async {
         await reloadArticles(force: true)
     }
 
-    func applySettingsAfterSave(
+    /// 保存设置后只同步分页相关参数，不触发首页整页重载。
+    func syncPaginationSettingsAfterSave(
         previousSettings: ArticleGenerationSettings,
         newSettings: ArticleGenerationSettings
     ) async {
-        guard !articles.isEmpty else {
-            await reloadIfNeededAfterSettingsSave()
-            return
-        }
+        guard !articles.isEmpty else { return }
+        guard newSettings.canUpdatePaginationInPlace(comparedTo: previousSettings) else { return }
 
-        guard previousSettings != newSettings else { return }
         let consumedWordCount = articles.reduce(into: 0) { partialResult, article in
             partialResult += article.targetWords.count
         }
@@ -96,7 +89,9 @@ final class TodayViewModel: ObservableObject {
             maiMemo: maiMemo,
             llm: llm,
             batchSize: settings.wordsPerArticle,
-            todayWordLimit: settings.articleWordCount
+            todayWordLimit: settings.articleWordCount,
+            scenes: settings.enabledScenes,
+            topic: settings.selectedTopic
         )
     }
 
@@ -230,7 +225,7 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(settings: SettingsStore.shared) {
                     Task {
-                        await viewModel.applySettingsAfterSave(
+                        await viewModel.syncPaginationSettingsAfterSave(
                             previousSettings: settingsSnapshot,
                             newSettings: SettingsStore.shared.articleGenerationSettings
                         )

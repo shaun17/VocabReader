@@ -3,8 +3,8 @@ import XCTest
 
 final class ArticleGeneratorTests: XCTestCase {
     func testUsesConfiguredTodayWordLimit() async throws {
-        let mockLLM = MockLLMService { words, scene in
-            Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+        let mockLLM = MockLLMService { words, scene, topic in
+            Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
         }
         let mockMaiMemo = MockMaiMemoService(words: [])
         let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, todayWordLimit: 30)
@@ -16,9 +16,9 @@ final class ArticleGeneratorTests: XCTestCase {
 
     func testGroupsWordsUsingConfiguredWordsPerArticle() async throws {
         let collector = BatchCollector()
-        let mockLLM = MockLLMService { words, scene in
+        let mockLLM = MockLLMService { words, scene, topic in
             await collector.append(words)
-            return Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+            return Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
         }
         let words = (1...45).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
@@ -32,8 +32,8 @@ final class ArticleGeneratorTests: XCTestCase {
     }
 
     func testReturnsEmptyWhenNoWords() async throws {
-        let mockLLM = MockLLMService { words, scene in
-            Article(id: UUID(), scene: scene, content: "", targetWords: words)
+        let mockLLM = MockLLMService { words, scene, topic in
+            Article(id: UUID(), scene: scene, topic: topic, content: "", targetWords: words)
         }
         let mockMaiMemo = MockMaiMemoService(words: [])
         let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM)
@@ -45,10 +45,10 @@ final class ArticleGeneratorTests: XCTestCase {
 
     func testGeneratesArticlesOneBatchAtATime() async throws {
         let tracker = ConcurrentCallTracker()
-        let mockLLM = MockLLMService { words, scene in
+        let mockLLM = MockLLMService { words, scene, topic in
             try await tracker.track {
                 try await Task.sleep(nanoseconds: 50_000_000)
-                return Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+                return Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
             }
         }
         let words = (1...50).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
@@ -63,11 +63,11 @@ final class ArticleGeneratorTests: XCTestCase {
 
     func testGenerateTodayArticlesStreamYieldsBeforeAllBatchesFinish() async throws {
         let firstArticleDelivered = XCTestExpectation(description: "first article delivered")
-        let mockLLM = MockLLMService { words, scene in
+        let mockLLM = MockLLMService { words, scene, topic in
             if words.first?.spelling == "word11" {
                 try await Task.sleep(nanoseconds: 500_000_000)
             }
-            return Article(id: UUID(), scene: scene, content: words.map(\.spelling).joined(separator: ","), targetWords: words)
+            return Article(id: UUID(), scene: scene, topic: topic, content: words.map(\.spelling).joined(separator: ","), targetWords: words)
         }
         let words = (1...20).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
@@ -85,9 +85,9 @@ final class ArticleGeneratorTests: XCTestCase {
 
     func testPagingSessionLoadsOneBatchPerRequest() async throws {
         let collector = BatchCollector()
-        let mockLLM = MockLLMService { words, scene in
+        let mockLLM = MockLLMService { words, scene, topic in
             await collector.append(words)
-            return Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+            return Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
         }
         let words = (1...20).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
@@ -108,8 +108,8 @@ final class ArticleGeneratorTests: XCTestCase {
     }
 
     func testPagingSessionReturnsNilAfterLastBatch() async throws {
-        let mockLLM = MockLLMService { words, scene in
-            Article(id: UUID(), scene: scene, content: "text", targetWords: words)
+        let mockLLM = MockLLMService { words, scene, topic in
+            Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
         }
         let words = (1...10).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
@@ -120,6 +120,30 @@ final class ArticleGeneratorTests: XCTestCase {
         let nextArticle = try await session.loadNextArticle()
 
         XCTAssertNil(nextArticle)
+    }
+
+    func testUsesConfiguredScenesAndTopicWhenGeneratingArticles() async throws {
+        let recorder = GenerationRecorder()
+        let mockLLM = MockLLMService { words, scene, topic in
+            await recorder.record(scene: scene, topic: topic)
+            return Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
+        }
+        let words = (1...20).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(
+            maiMemo: mockMaiMemo,
+            llm: mockLLM,
+            batchSize: 10,
+            scenes: [.dialogue, .science],
+            topic: .ai
+        )
+
+        _ = try await generator.generateTodayArticles()
+
+        let generatedScenes = await recorder.scenes
+        let generatedTopics = await recorder.topics
+        XCTAssertEqual(generatedScenes, [.dialogue, .science])
+        XCTAssertEqual(generatedTopics, [.ai, .ai])
     }
 }
 
@@ -143,6 +167,16 @@ actor ConcurrentCallTracker {
     }
 }
 
+actor GenerationRecorder {
+    private(set) var scenes: [ArticleScene] = []
+    private(set) var topics: [ArticleTopic] = []
+
+    func record(scene: ArticleScene, topic: ArticleTopic) {
+        scenes.append(scene)
+        topics.append(topic)
+    }
+}
+
 // MARK: - Mocks
 
 final class MockMaiMemoService: MaiMemoServiceProtocol {
@@ -160,11 +194,11 @@ final class MockMaiMemoService: MaiMemoServiceProtocol {
 }
 
 final class MockLLMService: LLMServiceProtocol {
-    let handler: ([VocabWord], ArticleScene) async throws -> Article
-    init(_ handler: @escaping ([VocabWord], ArticleScene) async throws -> Article) {
+    let handler: ([VocabWord], ArticleScene, ArticleTopic) async throws -> Article
+    init(_ handler: @escaping ([VocabWord], ArticleScene, ArticleTopic) async throws -> Article) {
         self.handler = handler
     }
-    func generateArticle(words: [VocabWord], scene: ArticleScene) async throws -> Article {
-        try await handler(words, scene)
+    func generateArticle(words: [VocabWord], scene: ArticleScene, topic: ArticleTopic) async throws -> Article {
+        try await handler(words, scene, topic)
     }
 }
