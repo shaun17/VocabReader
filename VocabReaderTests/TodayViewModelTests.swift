@@ -3,50 +3,43 @@ import XCTest
 
 @MainActor
 final class TodayViewModelTests: XCTestCase {
-    func testLoadArticlesLoadsOnlyFirstArticle() async {
-        let firstArticle = Article(
-            id: UUID(),
-            scene: .novel,
-            content: "first",
-            targetWords: [VocabWord(id: "1", spelling: "apple")]
-        )
-        let secondArticle = Article(
-            id: UUID(),
-            scene: .science,
-            content: "second",
-            targetWords: [VocabWord(id: "2", spelling: "banana")]
-        )
+    func testLoadArticlesLoadsInitialBatch() async {
+        let articles = (1...5).map { i in
+            Article(
+                id: UUID(),
+                scene: .novel,
+                content: "article\(i)",
+                targetWords: [VocabWord(id: "\(i)", spelling: "word\(i)")]
+            )
+        }
         let viewModel = TodayViewModel {
-            MockTodayArticleGenerator(articles: [firstArticle, secondArticle])
+            MockTodayArticleGenerator(articles: articles)
         }
 
         await viewModel.loadArticles()
-        XCTAssertEqual(viewModel.articles.map(\.content), ["first"])
+        XCTAssertEqual(viewModel.articles.map(\.content), ["article1", "article2", "article3"])
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNil(viewModel.error)
     }
 
     func testLoadMoreRequiresListInteraction() async {
-        let firstArticle = Article(
-            id: UUID(),
-            scene: .novel,
-            content: "first",
-            targetWords: [VocabWord(id: "1", spelling: "apple")]
-        )
-        let secondArticle = Article(
-            id: UUID(),
-            scene: .science,
-            content: "second",
-            targetWords: [VocabWord(id: "2", spelling: "banana")]
-        )
+        let articles = (1...5).map { i in
+            Article(
+                id: UUID(),
+                scene: .novel,
+                content: "article\(i)",
+                targetWords: [VocabWord(id: "\(i)", spelling: "word\(i)")]
+            )
+        }
         let viewModel = TodayViewModel {
-            MockTodayArticleGenerator(articles: [firstArticle, secondArticle])
+            MockTodayArticleGenerator(articles: articles)
         }
 
         await viewModel.loadArticles()
         await viewModel.loadMoreIfNeededForListTail()
 
-        XCTAssertEqual(viewModel.articles.map(\.content), ["first"])
+        // Without setting footer visible, no additional loading happens
+        XCTAssertEqual(viewModel.articles.map(\.content), ["article1", "article2", "article3"])
         XCTAssertNil(viewModel.error)
     }
 
@@ -236,20 +229,13 @@ final class TodayViewModelTests: XCTestCase {
         XCTAssertEqual(factory.makeCount, 2)
     }
 
-    func testSaveSettingsDoesNotReplacePaginationWhenTopicChanges() async {
+    func testSaveSettingsUpdatesSessionWhenTopicChanges() async {
         let firstArticle = Article(
             id: UUID(),
             scene: .novel,
             topic: .general,
             content: "first",
             targetWords: [VocabWord(id: "1", spelling: "apple")]
-        )
-        let secondArticle = Article(
-            id: UUID(),
-            scene: .science,
-            topic: .general,
-            content: "second",
-            targetWords: [VocabWord(id: "2", spelling: "banana")]
         )
         let replacementArticle = Article(
             id: UUID(),
@@ -259,16 +245,14 @@ final class TodayViewModelTests: XCTestCase {
             targetWords: [VocabWord(id: "3", spelling: "clinic")]
         )
         let factory = MockTodayArticleGeneratorFactory(generators: [
-            MockTodayArticleGenerator(articles: [firstArticle, secondArticle]),
-            MockTodayArticleGenerator(articles: [firstArticle, secondArticle, replacementArticle])
+            MockTodayArticleGenerator(articles: [firstArticle]),
+            MockTodayArticleGenerator(articles: [replacementArticle])
         ])
         let viewModel = TodayViewModel {
             factory.makeGenerator()
         }
 
         await viewModel.loadArticles()
-        viewModel.setLoadMoreFooterVisible(true)
-        await viewModel.loadMoreIfNeededForListTail()
 
         await viewModel.syncPaginationSettingsAfterSave(
             previousSettings: ArticleGenerationSettings(
@@ -285,13 +269,10 @@ final class TodayViewModelTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(factory.makeCount, 1)
-        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second"])
-
-        viewModel.setLoadMoreFooterVisible(true)
-        await viewModel.loadMoreIfNeededForListTail()
-
-        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second"])
+        // Topic changed — should NOT trigger reload, only update session
+        XCTAssertEqual(viewModel.articles.map(\.content), ["first"])
+        // New generator created for future pagination
+        XCTAssertEqual(factory.makeCount, 2)
     }
 
     func testRegenerateArticlesForcesRefresh() async {

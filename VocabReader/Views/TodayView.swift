@@ -25,13 +25,12 @@ final class TodayViewModel: ObservableObject {
         await reloadArticles(force: true)
     }
 
-    /// 保存设置后只同步分页相关参数，不触发首页整页重载。
+    /// 保存设置后同步分页参数，不触发重载。主题或体裁变更时更新后续生成的 session。
     func syncPaginationSettingsAfterSave(
         previousSettings: ArticleGenerationSettings,
         newSettings: ArticleGenerationSettings
     ) async {
         guard !articles.isEmpty else { return }
-        guard newSettings.canUpdatePaginationInPlace(comparedTo: previousSettings) else { return }
 
         let consumedWordCount = articles.reduce(into: 0) { partialResult, article in
             partialResult += article.targetWords.count
@@ -57,7 +56,10 @@ final class TodayViewModel: ObservableObject {
         pagingSession = generatorFactory().makePagingSession()
         defer { isLoading = false }
 
-        await loadNextArticle()
+        for _ in 0..<3 {
+            guard hasMoreArticles else { break }
+            await loadNextArticle()
+        }
     }
 
     var shouldShowLoadMoreFooter: Bool {
@@ -167,11 +169,11 @@ struct TodayView: View {
                                     }
                             }
 
-                            if viewModel.shouldShowLoadMoreFooter {
+                            if viewModel.isLoading || viewModel.shouldShowLoadMoreFooter {
                                 VStack(spacing: 8) {
-                                    if viewModel.isLoadingMore {
+                                    if viewModel.isLoading || viewModel.isLoadingMore {
                                         ProgressView()
-                                        Text("正在生成更多文章…")
+                                        Text("正在生成文章…")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     } else {
