@@ -27,7 +27,12 @@ struct SettingsView: View {
                                 Text(topic.rawValue).tag(topic)
                             }
                         }
-                        .tint(.secondary)
+                        .pickerStyle(.segmented)
+                        .onAppear {
+                            UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(Color.readingTitle)
+                            UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+                            UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor(Color.readingTitle)], for: .normal)
+                        }
                     }
 
                     SettingsLabel("文章体裁")
