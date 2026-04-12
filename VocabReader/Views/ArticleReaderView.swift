@@ -9,38 +9,67 @@ struct ArticleReaderView: View {
 
     @State private var translationText: String = ""
     @State private var showTranslation = false
+    @StateObject private var audioPlayer: ArticleAudioPlayerViewModel
     private let formatter = ArticleContentFormatter()
     private let extractor = ArticleParagraphExtractor()
+    private let paragraphs: [ArticleParagraph]
+
+    init(article: Article, translator: WordTranslatorServiceProtocol, paragraphTranslator: ArticleParagraphTranslatorProtocol) {
+        self.article = article
+        self.translator = translator
+        self.paragraphTranslator = paragraphTranslator
+        let extracted = ArticleParagraphExtractor().extract(from: article)
+        self.paragraphs = extracted
+        _audioPlayer = StateObject(wrappedValue: ArticleAudioPlayerViewModel(paragraphs: extracted))
+    }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
-                ArticleMetadataHeader(article: article)
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 24) {
+                        ArticleMetadataHeader(article: article)
 
-                if !article.title.isEmpty {
-                    Text(article.title)
-                        .font(.system(.title, design: .serif).italic())
-                        .foregroundStyle(Color.readingTitle)
-                }
-
-                ForEach(extractor.extract(from: article)) { paragraph in
-                    ArticleParagraphSection(
-                        paragraph: paragraph,
-                        targetWords: article.targetWords,
-                        formatter: formatter,
-                        translator: paragraphTranslator,
-                        onWordTap: { spelling in
-                            translationText = spelling
-                            showTranslation = true
+                        if !article.title.isEmpty {
+                            Text(article.title)
+                                .font(.system(.title, design: .serif).italic())
+                                .foregroundStyle(Color.readingTitle)
                         }
-                    )
+
+                        ForEach(paragraphs) { paragraph in
+                            ArticleParagraphSection(
+                                paragraph: paragraph,
+                                targetWords: article.targetWords,
+                                formatter: formatter,
+                                translator: paragraphTranslator,
+                                isHighlighted: audioPlayer.currentParagraphIndex == paragraph.index,
+                                onWordTap: { spelling in
+                                    translationText = spelling
+                                    showTranslation = true
+                                },
+                                onTapParagraph: {
+                                    audioPlayer.playFromParagraph(paragraph.index)
+                                }
+                            )
+                            .id(paragraph.index)
+                        }
+                    }
+                    .padding()
+                }
+                .onChange(of: audioPlayer.currentParagraphIndex) { _, newIndex in
+                    guard let newIndex else { return }
+                    withAnimation {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    }
                 }
             }
-                .padding()
+
+            ArticlePlayerBar(player: audioPlayer)
         }
         .background { LinedPaperBackground() }
         .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { audioPlayer.stop() }
         .modifier(
             TranslationPresentationCompatibilityModifier(
                 isPresented: $showTranslation,
@@ -83,7 +112,9 @@ private struct ArticleParagraphSection: View {
     let paragraph: ArticleParagraph
     let targetWords: [VocabWord]
     let formatter: ArticleContentFormatter
+    let isHighlighted: Bool
     let onWordTap: (String) -> Void
+    let onTapParagraph: () -> Void
 
     @StateObject private var viewModel: ArticleParagraphTranslationViewModel
 
@@ -92,12 +123,16 @@ private struct ArticleParagraphSection: View {
         targetWords: [VocabWord],
         formatter: ArticleContentFormatter,
         translator: ArticleParagraphTranslatorProtocol,
-        onWordTap: @escaping (String) -> Void
+        isHighlighted: Bool = false,
+        onWordTap: @escaping (String) -> Void,
+        onTapParagraph: @escaping () -> Void = {}
     ) {
         self.paragraph = paragraph
         self.targetWords = targetWords
         self.formatter = formatter
+        self.isHighlighted = isHighlighted
         self.onWordTap = onWordTap
+        self.onTapParagraph = onTapParagraph
         _viewModel = StateObject(
             wrappedValue: ArticleParagraphTranslationViewModel(
                 paragraph: paragraph.content,
@@ -158,6 +193,15 @@ private struct ArticleParagraphSection: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHighlighted ? Color.readingTitle.opacity(0.08) : Color.clear)
+        )
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .onTapGesture(count: 2) {
+            onTapParagraph()
         }
     }
 

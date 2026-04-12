@@ -44,6 +44,9 @@
 		FFF573B0D331AF4157990E85 /* MaiMemoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD124C687676564664A87744 /* MaiMemoService.swift */; };
 		B1A2C3D4E5F60718A9B0C1D2 /* ReadingTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2C1B0A9180706F5E4D3C2A1 /* ReadingTheme.swift */; };
 		A2B3C4D5E6F70819BAC1D2E3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A60798A9B0C1D2 /* Assets.xcassets */; };
+		AA1B2C3D4E5F6071 /* SpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1B2C3D4E5F6072 /* SpeechService.swift */; };
+		BB2C3D4E5F607182 /* ArticleAudioPlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C3D4E5F607183 /* ArticleAudioPlayerViewModel.swift */; };
+		CC3D4E5F60718293 /* ArticlePlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3D4E5F60718294 /* ArticlePlayerBar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,12 +100,16 @@
 		EC5661239146076B6B01D7B3 /* SettingsDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDraft.swift; sourceTree = "<group>"; };
 		D2C1B0A9180706F5E4D3C2A1 /* ReadingTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingTheme.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A60798A9B0C1D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA1B2C3D4E5F6072 /* SpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
+		BB2C3D4E5F607183 /* ArticleAudioPlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleAudioPlayerViewModel.swift; sourceTree = "<group>"; };
+		CC3D4E5F60718294 /* ArticlePlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticlePlayerBar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		1C134DD9928DA49EDEDE1B14 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				BB2C3D4E5F607183 /* ArticleAudioPlayerViewModel.swift */,
 				2CE7D522F15A571552B153ED /* ArticleParagraphTranslationViewModel.swift */,
 				A0129CFFC79F4A6E37B7183F /* SettingsConnectionDiagnosticsViewModel.swift */,
 				45C27C4F167C495819C060DE /* WordDetailViewModel.swift */,
@@ -166,6 +173,7 @@
 				94ED66C0F0A28E8AA7897EB5 /* LLMService.swift */,
 				BD124C687676564664A87744 /* MaiMemoService.swift */,
 				975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */,
+				AA1B2C3D4E5F6072 /* SpeechService.swift */,
 				51D08F2F145DA5E41D0E90A7 /* WordTranslatorService.swift */,
 			);
 			path = Services;
@@ -193,6 +201,7 @@
 			isa = PBXGroup;
 			children = (
 				4F0DE6EC868502C68C49A0BB /* ArticleCardView.swift */,
+				CC3D4E5F60718294 /* ArticlePlayerBar.swift */,
 				8E71407948724FBACAC34100 /* ArticleReaderView.swift */,
 				D2C1B0A9180706F5E4D3C2A1 /* ReadingTheme.swift */,
 				2F8318C69E4611AE56E8D475 /* SettingsView.swift */,
@@ -313,6 +322,9 @@
 				1E0D8C0FB474C974937500BC /* WordDetailSheet.swift in Sources */,
 				A3A00FF4889AB6F61E73CA99 /* WordDetailViewModel.swift in Sources */,
 				817CA7E106A09CF25D230E40 /* WordTranslatorService.swift in Sources */,
+				AA1B2C3D4E5F6071 /* SpeechService.swift in Sources */,
+				BB2C3D4E5F607182 /* ArticleAudioPlayerViewModel.swift in Sources */,
+				CC3D4E5F60718293 /* ArticlePlayerBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
