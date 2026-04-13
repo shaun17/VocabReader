@@ -128,6 +128,8 @@ struct TodayView: View {
     @State private var showSettings = false
     @State private var selectedArticle: Article?
     @State private var settingsSnapshot = SettingsStore.shared.articleGenerationSettings
+    @StateObject private var bookmarkStore = BookmarkStore.shared
+    @State private var showBookmarks = false
 
     var body: some View {
         NavigationStack {
@@ -208,6 +210,13 @@ struct TodayView: View {
             .scrollContentBackground(.hidden)
             .navigationTitle("今日阅读")
             .toolbar {
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    Button {
+                        showBookmarks = true
+                    } label: {
+                        Image(systemName: "star")
+                    }
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         Task {
@@ -242,6 +251,9 @@ struct TodayView: View {
                     translator: translationService,
                     paragraphTranslator: translationService
                 )
+            }
+            .navigationDestination(isPresented: $showBookmarks) {
+                BookmarkListView(store: bookmarkStore)
             }
         }
         .task {
