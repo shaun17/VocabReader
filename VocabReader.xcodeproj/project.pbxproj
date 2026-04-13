@@ -47,6 +47,8 @@
 		AA1B2C3D4E5F6071 /* SpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1B2C3D4E5F6072 /* SpeechService.swift */; };
 		BB2C3D4E5F607182 /* ArticleAudioPlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C3D4E5F607183 /* ArticleAudioPlayerViewModel.swift */; };
 		CC3D4E5F60718293 /* ArticlePlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3D4E5F60718294 /* ArticlePlayerBar.swift */; };
+		D98EFEF823E24B879AEB48AB615A268A /* BookmarkedWord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F69F32E403ED49CB939016E2FD83F88B /* BookmarkedWord.swift */; };
+		A1DDA8D6AAB3479887674AC75BEC1BF6 /* BookmarkedWordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1D38C9E3B44A989BC86ADAE1C4A3DE /* BookmarkedWordTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +105,8 @@
 		AA1B2C3D4E5F6072 /* SpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
 		BB2C3D4E5F607183 /* ArticleAudioPlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleAudioPlayerViewModel.swift; sourceTree = "<group>"; };
 		CC3D4E5F60718294 /* ArticlePlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticlePlayerBar.swift; sourceTree = "<group>"; };
+		F69F32E403ED49CB939016E2FD83F88B /* BookmarkedWord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkedWord.swift; sourceTree = "<group>"; };
+		9E1D38C9E3B44A989BC86ADAE1C4A3DE /* BookmarkedWordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkedWordTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -131,6 +135,7 @@
 				0135BEC1FC11DD7D6E988848 /* VocabReaderTests.swift */,
 				DE633BEFBE242598FEDA476F /* WordDetailViewModelTests.swift */,
 				4E3BF15991BBF4F61DCFAD7B /* WordTranslatorServiceTests.swift */,
+				9E1D38C9E3B44A989BC86ADAE1C4A3DE /* BookmarkedWordTests.swift */,
 			);
 			path = VocabReaderTests;
 			sourceTree = "<group>";
@@ -145,6 +150,7 @@
 				65DA331F15AF3AA8461A53A3 /* ArticleTopic.swift */,
 				EC5661239146076B6B01D7B3 /* SettingsDraft.swift */,
 				21AE130B2D4550AC2713076C /* VocabWord.swift */,
+				F69F32E403ED49CB939016E2FD83F88B /* BookmarkedWord.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -325,6 +331,7 @@
 				AA1B2C3D4E5F6071 /* SpeechService.swift in Sources */,
 				BB2C3D4E5F607182 /* ArticleAudioPlayerViewModel.swift in Sources */,
 				CC3D4E5F60718293 /* ArticlePlayerBar.swift in Sources */,
+				D98EFEF823E24B879AEB48AB615A268A /* BookmarkedWord.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -343,6 +350,7 @@
 				8710CDFEAD016D806812BDBB /* VocabReaderTests.swift in Sources */,
 				CF4368AB2851A54530C891AD /* WordDetailViewModelTests.swift in Sources */,
 				156A8D4DD535DAC789FED3E4 /* WordTranslatorServiceTests.swift in Sources */,
+				A1DDA8D6AAB3479887674AC75BEC1BF6 /* BookmarkedWordTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
