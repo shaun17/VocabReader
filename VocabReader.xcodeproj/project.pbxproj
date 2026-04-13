@@ -49,6 +49,8 @@
 		CC3D4E5F60718293 /* ArticlePlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3D4E5F60718294 /* ArticlePlayerBar.swift */; };
 		D98EFEF823E24B879AEB48AB615A268A /* BookmarkedWord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F69F32E403ED49CB939016E2FD83F88B /* BookmarkedWord.swift */; };
 		A1DDA8D6AAB3479887674AC75BEC1BF6 /* BookmarkedWordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1D38C9E3B44A989BC86ADAE1C4A3DE /* BookmarkedWordTests.swift */; };
+		1B2A3C4D5E6F70819BAC1D2E /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C3D4E5F6071829A /* BookmarkStore.swift */; };
+		3D4E5F60718293A0B1C2D3E4 /* BookmarkStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5F60718293A0B1C2D3E4F5 /* BookmarkStoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -107,6 +109,8 @@
 		CC3D4E5F60718294 /* ArticlePlayerBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticlePlayerBar.swift; sourceTree = "<group>"; };
 		F69F32E403ED49CB939016E2FD83F88B /* BookmarkedWord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkedWord.swift; sourceTree = "<group>"; };
 		9E1D38C9E3B44A989BC86ADAE1C4A3DE /* BookmarkedWordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkedWordTests.swift; sourceTree = "<group>"; };
+		2C3D4E5F6071829A /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
+		4E5F60718293A0B1C2D3E4F5 /* BookmarkStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -136,6 +140,7 @@
 				DE633BEFBE242598FEDA476F /* WordDetailViewModelTests.swift */,
 				4E3BF15991BBF4F61DCFAD7B /* WordTranslatorServiceTests.swift */,
 				9E1D38C9E3B44A989BC86ADAE1C4A3DE /* BookmarkedWordTests.swift */,
+				4E5F60718293A0B1C2D3E4F5 /* BookmarkStoreTests.swift */,
 			);
 			path = VocabReaderTests;
 			sourceTree = "<group>";
@@ -181,6 +186,7 @@
 				975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */,
 				AA1B2C3D4E5F6072 /* SpeechService.swift */,
 				51D08F2F145DA5E41D0E90A7 /* WordTranslatorService.swift */,
+				2C3D4E5F6071829A /* BookmarkStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -332,6 +338,7 @@
 				BB2C3D4E5F607182 /* ArticleAudioPlayerViewModel.swift in Sources */,
 				CC3D4E5F60718293 /* ArticlePlayerBar.swift in Sources */,
 				D98EFEF823E24B879AEB48AB615A268A /* BookmarkedWord.swift in Sources */,
+				1B2A3C4D5E6F70819BAC1D2E /* BookmarkStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -351,6 +358,7 @@
 				CF4368AB2851A54530C891AD /* WordDetailViewModelTests.swift in Sources */,
 				156A8D4DD535DAC789FED3E4 /* WordTranslatorServiceTests.swift in Sources */,
 				A1DDA8D6AAB3479887674AC75BEC1BF6 /* BookmarkedWordTests.swift in Sources */,
+				3D4E5F60718293A0B1C2D3E4 /* BookmarkStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
