@@ -102,7 +102,15 @@
 
 ## 2026-04-13 推送与 App Store Connect 发布
 
-- [ ] 盘点当前待发布改动并完成本地提交
-- [ ] 推送 `main` 到远端仓库
-- [ ] 确认发布签名、构建号与 App Store Connect 上传链路
-- [ ] 完成归档与上传，记录发布结果
+- [x] 盘点当前待发布改动并完成本地提交
+- [x] 推送 `main` 到远端仓库
+- [x] 确认发布签名、构建号与 App Store Connect 上传链路
+- [x] 完成归档与上传，记录发布结果
+
+### Review
+
+- 提交结果：已提交 `2bf594b fix: polish article reader and restore release config`，并推送到 `origin/main`。
+- 根因修复：已把 `DEVELOPMENT_TEAM / MARKETING_VERSION / CURRENT_PROJECT_VERSION` 从易被 `xcodegen` 覆盖的工程文件回收到 [project.yml](/Users/wenren/code/swiftui/VocabReader/project.yml:1)，同时让 [Info.plist](/Users/wenren/code/swiftui/VocabReader/VocabReader/Info.plist:1) 读取构建设置，避免后续重新生成工程时丢失发布配置。
+- 发布版本：当前上传包版本为 `1.0 (202604132150)`。
+- 归档结果：`xcodebuild archive -allowProvisioningUpdates` 成功，归档路径为 `/tmp/VocabReader-AppStoreConnect.xcarchive`，签名身份为 `Apple Development: ren wen (4HXCVF58F5)`，团队为 `N4TQ2P9B46`。
+- 上传结果：`xcodebuild -exportArchive` 使用 `method = app-store-connect` 和 `destination = upload` 成功上传，终态为 `Uploaded package is processing.`，分发日志路径为 `/var/folders/3d/68946v9n4h17f9hfg4_862d80000gn/T/VocabReader_2026-04-13_21-55-56.548.xcdistributionlogs`。
