@@ -75,3 +75,34 @@
 - 工程整理：将首页文章卡片原先私有的纸片形状提炼到 `ReadingTheme.swift` 里做共享背景组件，首页文章卡片和收藏卡片改为同一套底板。
 - 交互保留：移除 `onDelete` 后，收藏删除动作改为卡片侧滑删除，避免样式统一时丢失原有删除能力。
 - 验证结果：`xcodebuildmcp build_run_sim -quiet` 在 `iPhone 17` 启动成功；运行截图见 `/var/folders/3d/68946v9n4h17f9hfg4_862d80000gn/T/screenshot_optimized_ff2686a8-9c56-434a-bb3f-b30a54ebf22b.jpg`。
+
+## 2026-04-13 文章菜单中文化
+
+- [x] 确认系统菜单英文的根因在工程本地化配置
+- [x] 修正开发语言和混合本地化配置，让系统菜单跟随中文
+- [x] 重新生成工程并验证文章选词菜单显示为中文
+
+### Review
+
+- 根因分析：工程生成结果里 `VocabReader.xcodeproj/project.pbxproj` 原本是 `developmentRegion = en;`，同时 `VocabReader/Info.plist` 缺少 `CFBundleAllowMixedLocalizations`，所以文章页选词菜单优先落回了 UIKit 的英文系统资源。
+- 实现结果：已在 [project.yml](/Users/wenren/code/swiftui/VocabReader/project.yml:1) 将开发语言切到 `zh-Hans`，并在 [Info.plist](/Users/wenren/code/swiftui/VocabReader/VocabReader/Info.plist:1) 启用 `CFBundleAllowMixedLocalizations`，随后用 `xcodegen generate` 重建工程。
+- 验证结果：`xcodebuildmcp build_run_sim -quiet` 在 `iPhone 17` 启动成功；当前模拟器选词菜单已显示为 `拷贝 / 收藏 / 查询 / 翻译 / 搜索网页 / 共享…`。
+
+## 2026-04-13 收藏成功提示
+
+- [x] 定位文章页收藏动作的现有链路
+- [x] 添加顶部“收藏成功”提示，并在 1 秒后自动消失
+- [x] 编译并运行验证收藏提示无回归
+
+### Review
+
+- 实现结果：文章页选词菜单点击“收藏”后，会在页面顶部显示“收藏成功”胶囊提示；若用户连续收藏，新的提示会重置 1 秒消失计时，不会提前闪退。
+- 代码落点：在 [ArticleReaderView.swift](/Users/wenren/code/swiftui/VocabReader/VocabReader/Views/ArticleReaderView.swift:1) 新增 `showBookmarkToast` 与 `bookmarkToastPresentationID` 状态，并通过 `presentBookmarkSuccessToast()` 驱动顶部 overlay 展示。
+- 验证结果：`xcodebuildmcp build_run_sim -quiet` 在 `iPhone 17` 编译并启动成功，当前改动未引入构建回归。
+
+## 2026-04-13 推送与 App Store Connect 发布
+
+- [ ] 盘点当前待发布改动并完成本地提交
+- [ ] 推送 `main` 到远端仓库
+- [ ] 确认发布签名、构建号与 App Store Connect 上传链路
+- [ ] 完成归档与上传，记录发布结果

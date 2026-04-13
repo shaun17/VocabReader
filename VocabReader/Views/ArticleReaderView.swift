@@ -9,6 +9,8 @@ struct ArticleReaderView: View {
 
     @State private var translationText: String = ""
     @State private var showTranslation = false
+    @State private var showBookmarkToast = false
+    @State private var bookmarkToastPresentationID = 0
     @StateObject private var audioPlayer: ArticleAudioPlayerViewModel
     @ObservedObject private var bookmarkStore = BookmarkStore.shared
     private let formatter = ArticleContentFormatter()
@@ -56,6 +58,7 @@ struct ArticleReaderView: View {
                                     let word = String(parts[0])
                                     let sentence = parts.count > 1 ? String(parts[1]) : word
                                     bookmarkStore.add(spelling: word, sentence: sentence)
+                                    presentBookmarkSuccessToast()
                                 }
                             )
                             .id(paragraph.index)
@@ -74,15 +77,45 @@ struct ArticleReaderView: View {
             ArticlePlayerBar(player: audioPlayer)
         }
         .background { LinedPaperBackground() }
+        .overlay(alignment: .top) {
+            if showBookmarkToast {
+                BookmarkSuccessToast()
+                    .padding(.top, 12)
+                    .padding(.horizontal, 20)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
+        }
         .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear { audioPlayer.stop() }
+        .task(id: bookmarkToastPresentationID) {
+            guard bookmarkToastPresentationID > 0 else { return }
+
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return
+            }
+
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showBookmarkToast = false
+            }
+        }
         .modifier(
             TranslationPresentationCompatibilityModifier(
                 isPresented: $showTranslation,
                 text: translationText
             )
         )
+    }
+
+    /// 每次收藏都重新触发顶部提示；新的展示会自动取消上一轮 1 秒倒计时。
+    private func presentBookmarkSuccessToast() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showBookmarkToast = true
+        }
+        bookmarkToastPresentationID += 1
     }
 }
 
@@ -112,6 +145,31 @@ private struct ArticleMetadataHeader: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct BookmarkSuccessToast: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "star.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.readingTitle)
+
+            Text("收藏成功")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.readingCardFill)
+                .overlay {
+                    Capsule(style: .continuous)
+                        .stroke(Color.readingRule.opacity(0.7), lineWidth: 0.8)
+                }
+        }
+        .shadow(color: Color.black.opacity(0.08), radius: 8, y: 4)
     }
 }
 
