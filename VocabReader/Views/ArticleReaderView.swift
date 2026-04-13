@@ -10,6 +10,7 @@ struct ArticleReaderView: View {
     @State private var translationText: String = ""
     @State private var showTranslation = false
     @StateObject private var audioPlayer: ArticleAudioPlayerViewModel
+    @ObservedObject private var bookmarkStore = BookmarkStore.shared
     private let formatter = ArticleContentFormatter()
     private let extractor = ArticleParagraphExtractor()
     private let paragraphs: [ArticleParagraph]
@@ -49,6 +50,12 @@ struct ArticleReaderView: View {
                                 },
                                 onTapParagraph: {
                                     audioPlayer.playFromParagraph(paragraph.index)
+                                },
+                                onBookmarkSelection: { packed in
+                                    let parts = packed.split(separator: "\n", maxSplits: 1)
+                                    let word = String(parts[0])
+                                    let sentence = parts.count > 1 ? String(parts[1]) : word
+                                    bookmarkStore.add(spelling: word, sentence: sentence)
                                 }
                             )
                             .id(paragraph.index)
@@ -115,6 +122,7 @@ private struct ArticleParagraphSection: View {
     let isHighlighted: Bool
     let onWordTap: (String) -> Void
     let onTapParagraph: () -> Void
+    let onBookmarkSelection: (String) -> Void
 
     @StateObject private var viewModel: ArticleParagraphTranslationViewModel
 
@@ -125,7 +133,8 @@ private struct ArticleParagraphSection: View {
         translator: ArticleParagraphTranslatorProtocol,
         isHighlighted: Bool = false,
         onWordTap: @escaping (String) -> Void,
-        onTapParagraph: @escaping () -> Void = {}
+        onTapParagraph: @escaping () -> Void = {},
+        onBookmarkSelection: @escaping (String) -> Void = { _ in }
     ) {
         self.paragraph = paragraph
         self.targetWords = targetWords
@@ -133,6 +142,7 @@ private struct ArticleParagraphSection: View {
         self.isHighlighted = isHighlighted
         self.onWordTap = onWordTap
         self.onTapParagraph = onTapParagraph
+        self.onBookmarkSelection = onBookmarkSelection
         _viewModel = StateObject(
             wrappedValue: ArticleParagraphTranslationViewModel(
                 paragraph: paragraph.content,
@@ -164,9 +174,7 @@ private struct ArticleParagraphSection: View {
                         onWordTap(spelling)
                     }
                 },
-                onTranslateSelection: { selectedText in
-                    onWordTap(selectedText)
-                }
+                onBookmarkSelection: onBookmarkSelection
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -213,12 +221,12 @@ private struct ArticleParagraphSection: View {
 private struct SelectableAttributedTextView: UIViewRepresentable {
     let attributedText: NSAttributedString
     let onOpenURL: (URL) -> Void
-    let onTranslateSelection: (String) -> Void
+    let onBookmarkSelection: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onOpenURL: onOpenURL,
-            onTranslateSelection: onTranslateSelection
+            onBookmarkSelection: onBookmarkSelection
         )
     }
 
@@ -245,7 +253,7 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             uiView.attributedText = styledText
         }
         context.coordinator.onOpenURL = onOpenURL
-        context.coordinator.onTranslateSelection = onTranslateSelection
+        context.coordinator.onBookmarkSelection = onBookmarkSelection
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
@@ -297,14 +305,14 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var onOpenURL: (URL) -> Void
-        var onTranslateSelection: (String) -> Void
+        var onBookmarkSelection: (String) -> Void
 
         init(
             onOpenURL: @escaping (URL) -> Void,
-            onTranslateSelection: @escaping (String) -> Void
+            onBookmarkSelection: @escaping (String) -> Void
         ) {
             self.onOpenURL = onOpenURL
-            self.onTranslateSelection = onTranslateSelection
+            self.onBookmarkSelection = onBookmarkSelection
         }
 
         func textView(
@@ -322,17 +330,66 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             editMenuForTextIn range: NSRange,
             suggestedActions: [UIMenuElement]
         ) -> UIMenu? {
+            // 双击选词时复用系统菜单，把自定义“收藏”插到 Lookup 前面，同时保留系统 translator。
             let selectedText = (textView.text as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !selectedText.isEmpty else {
                 return UIMenu(children: suggestedActions)
             }
 
-            let translateAction = UIAction(title: "翻译") { [onTranslateSelection] _ in
-                onTranslateSelection(selectedText)
+            let fullText = textView.text ?? ""
+            let bookmarkAction = UIAction(title: "收藏", image: UIImage(systemName: "star")) { [onBookmarkSelection] _ in
+                let sentence = SentenceExtractor.sentence(containing: selectedText, in: fullText)
+                onBookmarkSelection(selectedText + "\n" + sentence)
             }
 
-            return UIMenu(children: suggestedActions + [translateAction])
+            return UIMenu(children: prioritizedMenuElements(from: suggestedActions, bookmarkAction: bookmarkAction))
+        }
+
+        /// 优先把“收藏”插到系统 Lookup 前面；如果当前系统菜单里没有 Lookup，就把“收藏”前置到最前面。
+        private func prioritizedMenuElements(
+            from suggestedActions: [UIMenuElement],
+            bookmarkAction: UIAction
+        ) -> [UIMenuElement] {
+            let insertion = insertingBookmarkBeforeLookup(in: suggestedActions, bookmarkAction: bookmarkAction)
+            if insertion.didInsertBookmark {
+                return insertion.elements
+            }
+
+            return [bookmarkAction] + suggestedActions
+        }
+
+        /// 递归查找系统 Lookup 菜单，命中后把“收藏”插在它前面，避免误删系统 translator。
+        private func insertingBookmarkBeforeLookup(
+            in elements: [UIMenuElement],
+            bookmarkAction: UIAction
+        ) -> (elements: [UIMenuElement], didInsertBookmark: Bool) {
+            var didInsertBookmark = false
+            var updatedElements: [UIMenuElement] = []
+
+            for element in elements {
+                if let menu = element as? UIMenu {
+                    if menu.identifier == .lookup {
+                        updatedElements.append(bookmarkAction)
+                        updatedElements.append(menu)
+                        didInsertBookmark = true
+                        continue
+                    }
+
+                    let insertion = insertingBookmarkBeforeLookup(in: menu.children, bookmarkAction: bookmarkAction)
+                    if insertion.didInsertBookmark {
+                        updatedElements.append(menu.replacingChildren(insertion.elements))
+                        didInsertBookmark = true
+                    } else {
+                        updatedElements.append(menu)
+                    }
+                    continue
+                }
+
+                updatedElements.append(element)
+            }
+
+            return (updatedElements, didInsertBookmark)
         }
     }
 }
