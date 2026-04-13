@@ -10,6 +10,7 @@ struct ArticleReaderView: View {
     @State private var translationText: String = ""
     @State private var showTranslation = false
     @StateObject private var audioPlayer: ArticleAudioPlayerViewModel
+    @ObservedObject private var bookmarkStore = BookmarkStore.shared
     private let formatter = ArticleContentFormatter()
     private let extractor = ArticleParagraphExtractor()
     private let paragraphs: [ArticleParagraph]
@@ -49,6 +50,12 @@ struct ArticleReaderView: View {
                                 },
                                 onTapParagraph: {
                                     audioPlayer.playFromParagraph(paragraph.index)
+                                },
+                                onBookmarkSelection: { packed in
+                                    let parts = packed.split(separator: "\n", maxSplits: 1)
+                                    let word = String(parts[0])
+                                    let sentence = parts.count > 1 ? String(parts[1]) : word
+                                    bookmarkStore.add(spelling: word, sentence: sentence)
                                 }
                             )
                             .id(paragraph.index)
@@ -115,6 +122,7 @@ private struct ArticleParagraphSection: View {
     let isHighlighted: Bool
     let onWordTap: (String) -> Void
     let onTapParagraph: () -> Void
+    let onBookmarkSelection: (String) -> Void
 
     @StateObject private var viewModel: ArticleParagraphTranslationViewModel
 
@@ -125,7 +133,8 @@ private struct ArticleParagraphSection: View {
         translator: ArticleParagraphTranslatorProtocol,
         isHighlighted: Bool = false,
         onWordTap: @escaping (String) -> Void,
-        onTapParagraph: @escaping () -> Void = {}
+        onTapParagraph: @escaping () -> Void = {},
+        onBookmarkSelection: @escaping (String) -> Void = { _ in }
     ) {
         self.paragraph = paragraph
         self.targetWords = targetWords
@@ -133,6 +142,7 @@ private struct ArticleParagraphSection: View {
         self.isHighlighted = isHighlighted
         self.onWordTap = onWordTap
         self.onTapParagraph = onTapParagraph
+        self.onBookmarkSelection = onBookmarkSelection
         _viewModel = StateObject(
             wrappedValue: ArticleParagraphTranslationViewModel(
                 paragraph: paragraph.content,
@@ -166,7 +176,8 @@ private struct ArticleParagraphSection: View {
                 },
                 onTranslateSelection: { selectedText in
                     onWordTap(selectedText)
-                }
+                },
+                onBookmarkSelection: onBookmarkSelection
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -214,11 +225,13 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     let attributedText: NSAttributedString
     let onOpenURL: (URL) -> Void
     let onTranslateSelection: (String) -> Void
+    let onBookmarkSelection: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onOpenURL: onOpenURL,
-            onTranslateSelection: onTranslateSelection
+            onTranslateSelection: onTranslateSelection,
+            onBookmarkSelection: onBookmarkSelection
         )
     }
 
@@ -246,6 +259,7 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         }
         context.coordinator.onOpenURL = onOpenURL
         context.coordinator.onTranslateSelection = onTranslateSelection
+        context.coordinator.onBookmarkSelection = onBookmarkSelection
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
@@ -298,13 +312,16 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var onOpenURL: (URL) -> Void
         var onTranslateSelection: (String) -> Void
+        var onBookmarkSelection: (String) -> Void
 
         init(
             onOpenURL: @escaping (URL) -> Void,
-            onTranslateSelection: @escaping (String) -> Void
+            onTranslateSelection: @escaping (String) -> Void,
+            onBookmarkSelection: @escaping (String) -> Void
         ) {
             self.onOpenURL = onOpenURL
             self.onTranslateSelection = onTranslateSelection
+            self.onBookmarkSelection = onBookmarkSelection
         }
 
         func textView(
@@ -332,7 +349,13 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
                 onTranslateSelection(selectedText)
             }
 
-            return UIMenu(children: suggestedActions + [translateAction])
+            let fullText = textView.text ?? ""
+            let bookmarkAction = UIAction(title: "收藏", image: UIImage(systemName: "star")) { [onBookmarkSelection] _ in
+                let sentence = SentenceExtractor.sentence(containing: selectedText, in: fullText)
+                onBookmarkSelection(selectedText + "\n" + sentence)
+            }
+
+            return UIMenu(children: suggestedActions + [translateAction, bookmarkAction])
         }
     }
 }
