@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let users bookmark unfamiliar words (with their containing sentence) from articles, persisted as JSON, browsable in a date-grouped list.
+**Goal:** Let users bookmark unfamiliar words (with their sentence context) from articles and view them in a date-grouped list.
 
-**Architecture:** New `BookmarkedWord` model + `BookmarkStore` service for JSON persistence + `BookmarkListView` for display. The edit menu in `ArticleReaderView` gets a "收藏" action that extracts the sentence and delegates to the store. TodayView toolbar gains a star icon entry point.
+**Architecture:** New `BookmarkedWord` model persisted as JSON in Documents directory. `BookmarkStore` (protocol-backed `ObservableObject`) manages CRUD and file I/O. The edit menu in `SelectableAttributedTextView` gains a "收藏" action that extracts the enclosing sentence and calls up through the existing callback chain to `ArticleReaderView`, which writes to the store. A new `BookmarkListView` is pushed from the TodayView toolbar.
 
-**Tech Stack:** Swift, SwiftUI, UIKit (UITextView edit menu), Foundation (JSONEncoder/FileManager)
+**Tech Stack:** Swift, SwiftUI, UIKit (edit menu), Foundation (JSONEncoder/Decoder, FileManager)
 
 ---
 
@@ -14,9 +14,44 @@
 
 **Files:**
 - Create: `VocabReader/Models/BookmarkedWord.swift`
-- Test: `VocabReaderTests/BookmarkStoreTests.swift`
+- Test: `VocabReaderTests/BookmarkedWordTests.swift`
 
-- [ ] **Step 1: Create the model file**
+- [ ] **Step 1: Write the failing test**
+
+Create `VocabReaderTests/BookmarkedWordTests.swift`:
+
+```swift
+import XCTest
+@testable import VocabReader
+
+final class BookmarkedWordTests: XCTestCase {
+    func testRoundTripCodable() throws {
+        let word = BookmarkedWord(
+            id: UUID(),
+            spelling: "ephemeral",
+            sentence: "The ephemeral beauty of cherry blossoms fades quickly.",
+            bookmarkedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        let data = try JSONEncoder().encode(word)
+        let decoded = try JSONDecoder().decode(BookmarkedWord.self, from: data)
+
+        XCTAssertEqual(decoded.id, word.id)
+        XCTAssertEqual(decoded.spelling, word.spelling)
+        XCTAssertEqual(decoded.sentence, word.sentence)
+        XCTAssertEqual(decoded.bookmarkedAt, word.bookmarkedAt)
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VocabReaderTests/BookmarkedWordTests 2>&1 | tail -20`
+Expected: FAIL — `BookmarkedWord` not defined.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `VocabReader/Models/BookmarkedWord.swift`:
 
 ```swift
 import Foundation
@@ -26,42 +61,32 @@ struct BookmarkedWord: Identifiable, Codable, Equatable {
     let spelling: String
     let sentence: String
     let bookmarkedAt: Date
-
-    init(id: UUID = UUID(), spelling: String, sentence: String, bookmarkedAt: Date = Date()) {
-        self.id = id
-        self.spelling = spelling
-        self.sentence = sentence
-        self.bookmarkedAt = bookmarkedAt
-    }
 }
 ```
 
-- [ ] **Step 2: Add file to Xcode project**
+Add both new files to the Xcode project's appropriate targets (BookmarkedWord.swift to VocabReader target, BookmarkedWordTests.swift to VocabReaderTests target).
 
-The project uses automatic file discovery — just ensure the file is in the `VocabReader/Models/` directory. Build to confirm:
+- [ ] **Step 4: Run test to verify it passes**
 
-```bash
-xcodebuild -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' build 2>&1 | tail -5
-```
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VocabReaderTests/BookmarkedWordTests 2>&1 | tail -20`
+Expected: PASS
 
-Expected: BUILD SUCCEEDED
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add VocabReader/Models/BookmarkedWord.swift
-git commit -m "feat: add BookmarkedWord model"
+git add VocabReader/Models/BookmarkedWord.swift VocabReaderTests/BookmarkedWordTests.swift VocabReader.xcodeproj
+git commit -m "feat: add BookmarkedWord model with Codable support"
 ```
 
 ---
 
-### Task 2: BookmarkStore with Protocol and JSON Persistence
+### Task 2: BookmarkStore with JSON Persistence
 
 **Files:**
 - Create: `VocabReader/Services/BookmarkStore.swift`
-- Create: `VocabReaderTests/BookmarkStoreTests.swift`
+- Test: `VocabReaderTests/BookmarkStoreTests.swift`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Write the failing tests**
 
 Create `VocabReaderTests/BookmarkStoreTests.swift`:
 
@@ -70,114 +95,121 @@ import XCTest
 @testable import VocabReader
 
 final class BookmarkStoreTests: XCTestCase {
-    private var tempURL: URL!
-    private var store: BookmarkStore!
+    private var tempDirectory: URL!
 
     override func setUp() {
         super.setUp()
-        tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("bookmark-tests-\(UUID().uuidString).json")
-        store = BookmarkStore(fileURL: tempURL)
+        tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookmarkStoreTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
-        try? FileManager.default.removeItem(at: tempURL)
+        try? FileManager.default.removeItem(at: tempDirectory)
         super.tearDown()
     }
 
+    private func makeStore() -> BookmarkStore {
+        BookmarkStore(directory: tempDirectory)
+    }
+
     func testAddBookmarkAppendsToList() {
-        store.add(spelling: "ephemeral", sentence: "The ephemeral beauty of cherry blossoms.")
+        let store = makeStore()
+        XCTAssertTrue(store.bookmarks.isEmpty)
+
+        store.add(spelling: "ephemeral", sentence: "The ephemeral beauty fades quickly.")
 
         XCTAssertEqual(store.bookmarks.count, 1)
-        XCTAssertEqual(store.bookmarks[0].spelling, "ephemeral")
-        XCTAssertEqual(store.bookmarks[0].sentence, "The ephemeral beauty of cherry blossoms.")
+        XCTAssertEqual(store.bookmarks.first?.spelling, "ephemeral")
+        XCTAssertEqual(store.bookmarks.first?.sentence, "The ephemeral beauty fades quickly.")
     }
 
     func testRemoveBookmarkDeletesById() {
-        store.add(spelling: "ephemeral", sentence: "Sentence A.")
-        store.add(spelling: "transient", sentence: "Sentence B.")
-        let idToRemove = store.bookmarks[0].id
+        let store = makeStore()
+        store.add(spelling: "ephemeral", sentence: "Sentence one.")
+        store.add(spelling: "ubiquitous", sentence: "Sentence two.")
+        let idToRemove = store.bookmarks.first!.id
 
         store.remove(id: idToRemove)
 
         XCTAssertEqual(store.bookmarks.count, 1)
-        XCTAssertEqual(store.bookmarks[0].spelling, "transient")
+        XCTAssertEqual(store.bookmarks.first?.spelling, "ubiquitous")
     }
 
     func testPersistenceRoundTrip() {
-        store.add(spelling: "ephemeral", sentence: "The ephemeral beauty.")
+        let store1 = makeStore()
+        store1.add(spelling: "ephemeral", sentence: "Sentence one.")
+        store1.add(spelling: "ubiquitous", sentence: "Sentence two.")
 
-        let reloaded = BookmarkStore(fileURL: tempURL)
-
-        XCTAssertEqual(reloaded.bookmarks.count, 1)
-        XCTAssertEqual(reloaded.bookmarks[0].spelling, "ephemeral")
-        XCTAssertEqual(reloaded.bookmarks[0].sentence, "The ephemeral beauty.")
+        let store2 = makeStore()
+        XCTAssertEqual(store2.bookmarks.count, 2)
+        XCTAssertEqual(store2.bookmarks[0].spelling, "ephemeral")
+        XCTAssertEqual(store2.bookmarks[1].spelling, "ubiquitous")
     }
 
-    func testLoadFromMissingFileStartsEmpty() {
-        let missingURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nonexistent-\(UUID().uuidString).json")
-        let emptyStore = BookmarkStore(fileURL: missingURL)
+    func testRemovePersistsAfterReload() {
+        let store1 = makeStore()
+        store1.add(spelling: "ephemeral", sentence: "Sentence one.")
+        store1.add(spelling: "ubiquitous", sentence: "Sentence two.")
+        store1.remove(id: store1.bookmarks.first!.id)
 
-        XCTAssertTrue(emptyStore.bookmarks.isEmpty)
+        let store2 = makeStore()
+        XCTAssertEqual(store2.bookmarks.count, 1)
+        XCTAssertEqual(store2.bookmarks.first?.spelling, "ubiquitous")
     }
 
-    func testContainsReturnsTrueForExistingSpelling() {
-        store.add(spelling: "ephemeral", sentence: "Some sentence.")
-
-        XCTAssertTrue(store.contains(spelling: "ephemeral"))
-        XCTAssertFalse(store.contains(spelling: "transient"))
+    func testEmptyFileLoadsGracefully() {
+        let store = makeStore()
+        XCTAssertTrue(store.bookmarks.isEmpty)
     }
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-```bash
-xcodebuild test -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing VocabReaderTests/BookmarkStoreTests 2>&1 | tail -10
-```
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VocabReaderTests/BookmarkStoreTests 2>&1 | tail -20`
+Expected: FAIL — `BookmarkStore` not defined.
 
-Expected: FAIL — `BookmarkStore` does not exist yet.
-
-- [ ] **Step 3: Implement BookmarkStore**
+- [ ] **Step 3: Write minimal implementation**
 
 Create `VocabReader/Services/BookmarkStore.swift`:
 
 ```swift
 import Foundation
 
-protocol BookmarkStoreProtocol: AnyObject {
+protocol BookmarkStoreProtocol: ObservableObject {
     var bookmarks: [BookmarkedWord] { get }
     func add(spelling: String, sentence: String)
     func remove(id: UUID)
-    func contains(spelling: String) -> Bool
 }
 
-final class BookmarkStore: ObservableObject, BookmarkStoreProtocol {
+final class BookmarkStore: BookmarkStoreProtocol, ObservableObject {
     @Published private(set) var bookmarks: [BookmarkedWord] = []
 
     private let fileURL: URL
 
     static let shared = BookmarkStore()
 
-    init(fileURL: URL? = nil) {
-        self.fileURL = fileURL ?? Self.defaultFileURL()
+    init(directory: URL? = nil) {
+        let dir = directory ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        self.fileURL = dir.appendingPathComponent("bookmarks.json")
         load()
     }
 
     func add(spelling: String, sentence: String) {
-        let bookmark = BookmarkedWord(spelling: spelling, sentence: sentence)
-        bookmarks.append(bookmark)
+        let word = BookmarkedWord(
+            id: UUID(),
+            spelling: spelling,
+            sentence: sentence,
+            bookmarkedAt: Date()
+        )
+        bookmarks.append(word)
         save()
     }
 
     func remove(id: UUID) {
         bookmarks.removeAll { $0.id == id }
         save()
-    }
-
-    func contains(spelling: String) -> Bool {
-        bookmarks.contains { $0.spelling.lowercased() == spelling.lowercased() }
     }
 
     private func save() {
@@ -190,265 +222,352 @@ final class BookmarkStore: ObservableObject, BookmarkStoreProtocol {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([BookmarkedWord].self, from: data) else {
-            return
-        }
-        bookmarks = decoded
-    }
-
-    private static func defaultFileURL() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent("bookmarks.json")
+        guard let data = try? Data(contentsOf: fileURL) else { return }
+        bookmarks = (try? JSONDecoder().decode([BookmarkedWord].self, from: data)) ?? []
     }
 }
 ```
 
+Add both new files to the Xcode project.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
-```bash
-xcodebuild test -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing VocabReaderTests/BookmarkStoreTests 2>&1 | tail -10
-```
-
-Expected: All 5 tests PASS.
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VocabReaderTests/BookmarkStoreTests 2>&1 | tail -20`
+Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add VocabReader/Services/BookmarkStore.swift VocabReaderTests/BookmarkStoreTests.swift
-git commit -m "feat: add BookmarkStore with JSON persistence and tests"
+git add VocabReader/Services/BookmarkStore.swift VocabReaderTests/BookmarkStoreTests.swift VocabReader.xcodeproj
+git commit -m "feat: add BookmarkStore with JSON file persistence"
 ```
 
 ---
 
-### Task 3: Add "收藏" Action to Edit Menu
+### Task 3: Sentence Extraction Helper
+
+**Files:**
+- Create: `VocabReader/Services/SentenceExtractor.swift`
+- Test: `VocabReaderTests/SentenceExtractorTests.swift`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `VocabReaderTests/SentenceExtractorTests.swift`:
+
+```swift
+import XCTest
+@testable import VocabReader
+
+final class SentenceExtractorTests: XCTestCase {
+    func testExtractsSentenceContainingWord() {
+        let paragraph = "The sun rose slowly. The ephemeral beauty of cherry blossoms fades quickly. Birds sang in the trees."
+        let result = SentenceExtractor.sentence(containing: "ephemeral", in: paragraph)
+        XCTAssertEqual(result, "The ephemeral beauty of cherry blossoms fades quickly.")
+    }
+
+    func testCaseInsensitiveMatch() {
+        let paragraph = "She felt Ubiquitous pressure from all sides. It was overwhelming."
+        let result = SentenceExtractor.sentence(containing: "ubiquitous", in: paragraph)
+        XCTAssertEqual(result, "She felt Ubiquitous pressure from all sides.")
+    }
+
+    func testReturnsFirstMatchWhenMultipleSentences() {
+        let paragraph = "Ephemeral joys are common. Another ephemeral moment passed."
+        let result = SentenceExtractor.sentence(containing: "ephemeral", in: paragraph)
+        XCTAssertEqual(result, "Ephemeral joys are common.")
+    }
+
+    func testReturnsFullParagraphWhenNoSentenceBoundary() {
+        let paragraph = "A single phrase with ephemeral inside"
+        let result = SentenceExtractor.sentence(containing: "ephemeral", in: paragraph)
+        XCTAssertEqual(result, "A single phrase with ephemeral inside")
+    }
+
+    func testReturnsFullTextWhenWordNotFound() {
+        let paragraph = "No matching word here."
+        let result = SentenceExtractor.sentence(containing: "ephemeral", in: paragraph)
+        XCTAssertEqual(result, "No matching word here.")
+    }
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VocabReaderTests/SentenceExtractorTests 2>&1 | tail -20`
+Expected: FAIL — `SentenceExtractor` not defined.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `VocabReader/Services/SentenceExtractor.swift`:
+
+```swift
+import Foundation
+
+enum SentenceExtractor {
+    static func sentence(containing word: String, in text: String) -> String {
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var match: String?
+
+        nsText.enumerateSubstrings(in: fullRange, options: .bySentences) { substring, _, _, stop in
+            guard let substring else { return }
+            if substring.localizedCaseInsensitiveContains(word) {
+                match = substring.trimmingCharacters(in: .whitespacesAndNewlines)
+                stop.pointee = true
+            }
+        }
+
+        return match ?? text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+```
+
+Add both new files to the Xcode project.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VocabReaderTests/SentenceExtractorTests 2>&1 | tail -20`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add VocabReader/Services/SentenceExtractor.swift VocabReaderTests/SentenceExtractorTests.swift VocabReader.xcodeproj
+git commit -m "feat: add SentenceExtractor for finding sentence containing a word"
+```
+
+---
+
+### Task 4: Add "收藏" Action to Edit Menu in ArticleReaderView
 
 **Files:**
 - Modify: `VocabReader/Views/ArticleReaderView.swift`
 
-This task threads a new `onBookmarkSelection` callback through the view hierarchy and adds a "收藏" button to the UITextView edit menu. It also extracts the sentence containing the selected word.
+This task modifies the callback chain from `SelectableAttributedTextView` up to `ArticleReaderView`.
 
-- [ ] **Step 1: Add onBookmarkSelection to SelectableAttributedTextView**
+- [ ] **Step 1: Add `onBookmarkSelection` callback to `SelectableAttributedTextView`**
 
-In `ArticleReaderView.swift`, modify `SelectableAttributedTextView` to accept a new callback and the full paragraph text:
-
-Add two new properties to `SelectableAttributedTextView` (after the existing `onTranslateSelection`):
+In `ArticleReaderView.swift`, add a new callback parameter to `SelectableAttributedTextView`:
 
 ```swift
-let paragraphText: String
-let onBookmarkSelection: (String, String) -> Void  // (word, sentence)
+private struct SelectableAttributedTextView: UIViewRepresentable {
+    let attributedText: NSAttributedString
+    let onOpenURL: (URL) -> Void
+    let onTranslateSelection: (String) -> Void
+    let onBookmarkSelection: (String) -> Void
 ```
 
-Update `makeCoordinator()` to pass the new fields:
+Update `makeCoordinator()` to pass it:
 
 ```swift
-func makeCoordinator() -> Coordinator {
-    Coordinator(
-        onOpenURL: onOpenURL,
-        onTranslateSelection: onTranslateSelection,
-        paragraphText: paragraphText,
-        onBookmarkSelection: onBookmarkSelection
-    )
-}
-```
-
-Update `updateUIView` to sync the new fields:
-
-```swift
-func updateUIView(_ uiView: UITextView, context: Context) {
-    let styledText = makeStyledAttributedText()
-    if uiView.attributedText != styledText {
-        uiView.attributedText = styledText
-    }
-    context.coordinator.onOpenURL = onOpenURL
-    context.coordinator.onTranslateSelection = onTranslateSelection
-    context.coordinator.paragraphText = paragraphText
-    context.coordinator.onBookmarkSelection = onBookmarkSelection
-}
-```
-
-- [ ] **Step 2: Update Coordinator with sentence extraction and bookmark action**
-
-Add new properties and the sentence extraction helper to `Coordinator`:
-
-```swift
-var paragraphText: String
-var onBookmarkSelection: (String, String) -> Void
-
-init(
-    onOpenURL: @escaping (URL) -> Void,
-    onTranslateSelection: @escaping (String) -> Void,
-    paragraphText: String,
-    onBookmarkSelection: @escaping (String, String) -> Void
-) {
-    self.onOpenURL = onOpenURL
-    self.onTranslateSelection = onTranslateSelection
-    self.paragraphText = paragraphText
-    self.onBookmarkSelection = onBookmarkSelection
-}
-```
-
-Add sentence extraction method to `Coordinator`:
-
-```swift
-private func extractSentence(containing word: String, from text: String) -> String {
-    var result = text
-    let nsText = text as NSString
-    let fullRange = NSRange(location: 0, length: nsText.length)
-    nsText.enumerateSubstrings(in: fullRange, options: .bySentences) { sentence, _, _, stop in
-        guard let sentence else { return }
-        if sentence.localizedCaseInsensitiveContains(word) {
-            result = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
-            stop.pointee = true
-        }
-    }
-    return result
-}
-```
-
-Update `editMenuForTextIn` to add the bookmark action:
-
-```swift
-func textView(
-    _ textView: UITextView,
-    editMenuForTextIn range: NSRange,
-    suggestedActions: [UIMenuElement]
-) -> UIMenu? {
-    let selectedText = (textView.text as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
-
-    guard !selectedText.isEmpty else {
-        return UIMenu(children: suggestedActions)
-    }
-
-    let translateAction = UIAction(title: "翻译") { [onTranslateSelection] _ in
-        onTranslateSelection(selectedText)
-    }
-
-    let bookmarkAction = UIAction(title: "收藏", image: UIImage(systemName: "star")) { [weak self] _ in
-        guard let self else { return }
-        let sentence = extractSentence(containing: selectedText, from: paragraphText)
-        onBookmarkSelection(selectedText, sentence)
-    }
-
-    return UIMenu(children: suggestedActions + [translateAction, bookmarkAction])
-}
-```
-
-- [ ] **Step 3: Thread callback through ArticleParagraphSection**
-
-Add `onBookmarkWord` parameter to `ArticleParagraphSection`:
-
-```swift
-let onBookmarkWord: (String, String) -> Void
-```
-
-Update the `init` to accept it:
-
-```swift
-init(
-    paragraph: ArticleParagraph,
-    targetWords: [VocabWord],
-    formatter: ArticleContentFormatter,
-    translator: ArticleParagraphTranslatorProtocol,
-    isHighlighted: Bool = false,
-    onWordTap: @escaping (String) -> Void,
-    onTapParagraph: @escaping () -> Void = {},
-    onBookmarkWord: @escaping (String, String) -> Void = { _, _ in }
-) {
-    // ... existing assignments ...
-    self.onBookmarkWord = onBookmarkWord
-    // ...
-}
-```
-
-Update the `SelectableAttributedTextView` call site in the `body` to pass the new parameters:
-
-```swift
-SelectableAttributedTextView(
-    attributedText: NSAttributedString(
-        formatter.formatParagraph(
-            content: paragraph.content,
-            targetWords: targetWords,
-            paragraphIndex: paragraph.index,
-            actionTitle: inlineActionTitle
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onOpenURL: onOpenURL,
+            onTranslateSelection: onTranslateSelection,
+            onBookmarkSelection: onBookmarkSelection
         )
-    ),
-    onOpenURL: { url in
-        if url.scheme == "paragraph", url.host(percentEncoded: false) == "\(paragraph.index)" {
-            Task {
-                await viewModel.didTapTranslateButton()
+    }
+```
+
+Update `updateUIView` to sync it:
+
+```swift
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        let styledText = makeStyledAttributedText()
+        if uiView.attributedText != styledText {
+            uiView.attributedText = styledText
+        }
+        context.coordinator.onOpenURL = onOpenURL
+        context.coordinator.onTranslateSelection = onTranslateSelection
+        context.coordinator.onBookmarkSelection = onBookmarkSelection
+    }
+```
+
+- [ ] **Step 2: Add callback and "收藏" action to Coordinator**
+
+Add `onBookmarkSelection` to the Coordinator class:
+
+```swift
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var onOpenURL: (URL) -> Void
+        var onTranslateSelection: (String) -> Void
+        var onBookmarkSelection: (String) -> Void
+
+        init(
+            onOpenURL: @escaping (URL) -> Void,
+            onTranslateSelection: @escaping (String) -> Void,
+            onBookmarkSelection: @escaping (String) -> Void
+        ) {
+            self.onOpenURL = onOpenURL
+            self.onTranslateSelection = onTranslateSelection
+            self.onBookmarkSelection = onBookmarkSelection
+        }
+```
+
+Update `editMenuForTextIn` to add the "收藏" action:
+
+```swift
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextIn range: NSRange,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            let selectedText = (textView.text as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !selectedText.isEmpty else {
+                return UIMenu(children: suggestedActions)
             }
-            return
-        }
 
-        if url.scheme == "word", let spelling = url.host(percentEncoded: false) {
-            onWordTap(spelling)
+            let translateAction = UIAction(title: "翻译") { [onTranslateSelection] _ in
+                onTranslateSelection(selectedText)
+            }
+
+            let fullText = textView.text ?? ""
+            let bookmarkAction = UIAction(title: "收藏", image: UIImage(systemName: "star")) { [onBookmarkSelection] _ in
+                let sentence = SentenceExtractor.sentence(containing: selectedText, in: fullText)
+                onBookmarkSelection(selectedText + "\n" + sentence)
+            }
+
+            return UIMenu(children: suggestedActions + [translateAction, bookmarkAction])
         }
-    },
-    onTranslateSelection: { selectedText in
-        onWordTap(selectedText)
-    },
-    paragraphText: paragraph.content,
-    onBookmarkSelection: onBookmarkWord
-)
 ```
 
-- [ ] **Step 4: Thread callback through ArticleReaderView**
+Note: We pack `word + "\n" + sentence` into a single string to keep the callback signature simple, then split it at the call site.
 
-Add `BookmarkStore` to `ArticleReaderView`. Add a property:
+- [ ] **Step 3: Thread the callback through ArticleParagraphSection**
+
+Add `onBookmarkSelection` to `ArticleParagraphSection`:
 
 ```swift
-@ObservedObject private var bookmarkStore = BookmarkStore.shared
+private struct ArticleParagraphSection: View {
+    let paragraph: ArticleParagraph
+    let targetWords: [VocabWord]
+    let formatter: ArticleContentFormatter
+    let isHighlighted: Bool
+    let onWordTap: (String) -> Void
+    let onBookmarkSelection: (String) -> Void
+    let onTapParagraph: () -> Void
 ```
 
-Update the `ForEach` in `body` to pass the bookmark callback to `ArticleParagraphSection`:
+Update its `init`:
 
 ```swift
-ForEach(paragraphs) { paragraph in
-    ArticleParagraphSection(
-        paragraph: paragraph,
-        targetWords: article.targetWords,
-        formatter: formatter,
-        translator: paragraphTranslator,
-        isHighlighted: audioPlayer.currentParagraphIndex == paragraph.index,
-        onWordTap: { spelling in
-            translationText = spelling
-            showTranslation = true
-        },
-        onTapParagraph: {
-            audioPlayer.playFromParagraph(paragraph.index)
-        },
-        onBookmarkWord: { word, sentence in
-            bookmarkStore.add(spelling: word, sentence: sentence)
-        }
-    )
-    .id(paragraph.index)
-}
+    init(
+        paragraph: ArticleParagraph,
+        targetWords: [VocabWord],
+        formatter: ArticleContentFormatter,
+        translator: ArticleParagraphTranslatorProtocol,
+        isHighlighted: Bool = false,
+        onWordTap: @escaping (String) -> Void,
+        onBookmarkSelection: @escaping (String) -> Void,
+        onTapParagraph: @escaping () -> Void = {}
+    ) {
 ```
 
-- [ ] **Step 5: Build to verify compilation**
+(Store `onBookmarkSelection` in the existing property assignment block.)
 
-```bash
-xcodebuild -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' build 2>&1 | tail -5
+Pass it to `SelectableAttributedTextView` in the body:
+
+```swift
+            SelectableAttributedTextView(
+                attributedText: NSAttributedString(
+                    formatter.formatParagraph(
+                        content: paragraph.content,
+                        targetWords: targetWords,
+                        paragraphIndex: paragraph.index,
+                        actionTitle: inlineActionTitle
+                    )
+                ),
+                onOpenURL: { url in
+                    if url.scheme == "paragraph", url.host(percentEncoded: false) == "\(paragraph.index)" {
+                        Task {
+                            await viewModel.didTapTranslateButton()
+                        }
+                        return
+                    }
+
+                    if url.scheme == "word", let spelling = url.host(percentEncoded: false) {
+                        onWordTap(spelling)
+                    }
+                },
+                onTranslateSelection: { selectedText in
+                    onWordTap(selectedText)
+                },
+                onBookmarkSelection: { packed in
+                    onBookmarkSelection(packed)
+                }
+            )
 ```
 
+- [ ] **Step 4: Wire up BookmarkStore in ArticleReaderView**
+
+Add a `@StateObject` for the store and pass the bookmark callback in the ForEach:
+
+```swift
+struct ArticleReaderView: View {
+    let article: Article
+    let translator: WordTranslatorServiceProtocol
+    let paragraphTranslator: ArticleParagraphTranslatorProtocol
+
+    @State private var translationText: String = ""
+    @State private var showTranslation = false
+    @StateObject private var audioPlayer: ArticleAudioPlayerViewModel
+    @StateObject private var bookmarkStore = BookmarkStore.shared
+    private let formatter = ArticleContentFormatter()
+    private let extractor = ArticleParagraphExtractor()
+    private let paragraphs: [ArticleParagraph]
+```
+
+In the `ForEach`, pass `onBookmarkSelection`:
+
+```swift
+                        ForEach(paragraphs) { paragraph in
+                            ArticleParagraphSection(
+                                paragraph: paragraph,
+                                targetWords: article.targetWords,
+                                formatter: formatter,
+                                translator: paragraphTranslator,
+                                isHighlighted: audioPlayer.currentParagraphIndex == paragraph.index,
+                                onWordTap: { spelling in
+                                    translationText = spelling
+                                    showTranslation = true
+                                },
+                                onBookmarkSelection: { packed in
+                                    let parts = packed.split(separator: "\n", maxSplits: 1)
+                                    let word = String(parts[0])
+                                    let sentence = parts.count > 1 ? String(parts[1]) : word
+                                    bookmarkStore.add(spelling: word, sentence: sentence)
+                                },
+                                onTapParagraph: {
+                                    audioPlayer.playFromParagraph(paragraph.index)
+                                }
+                            )
+                            .id(paragraph.index)
+                        }
+```
+
+- [ ] **Step 5: Build and verify**
+
+Run: `xcodebuild build -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -10`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add VocabReader/Views/ArticleReaderView.swift
-git commit -m "feat: add bookmark action to text selection edit menu"
+git add VocabReader/Views/ArticleReaderView.swift VocabReader.xcodeproj
+git commit -m "feat: add 收藏 action to text selection edit menu"
 ```
 
 ---
 
-### Task 4: BookmarkListView
+### Task 5: BookmarkListView
 
 **Files:**
 - Create: `VocabReader/Views/BookmarkListView.swift`
 
 - [ ] **Step 1: Create BookmarkListView**
+
+Create `VocabReader/Views/BookmarkListView.swift`:
 
 ```swift
 import SwiftUI
@@ -456,7 +575,7 @@ import SwiftUI
 struct BookmarkListView: View {
     @ObservedObject var store: BookmarkStore
 
-    @State private var expandedID: UUID?
+    @State private var expandedWordID: UUID?
 
     var body: some View {
         Group {
@@ -464,7 +583,7 @@ struct BookmarkListView: View {
                 ContentUnavailableView(
                     "暂无收藏",
                     systemImage: "star",
-                    description: Text("阅读文章时长按选词，点击"收藏"即可添加")
+                    description: Text("在阅读文章时长按选中单词，点击"收藏"即可添加")
                 )
             } else {
                 List {
@@ -473,16 +592,20 @@ struct BookmarkListView: View {
                             ForEach(group.words) { word in
                                 BookmarkRow(
                                     word: word,
-                                    isExpanded: expandedID == word.id,
-                                    onTap: {
-                                        withAnimation {
-                                            expandedID = expandedID == word.id ? nil : word.id
-                                        }
-                                    }
+                                    isExpanded: expandedWordID == word.id
                                 )
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    withAnimation {
+                                        expandedWordID = expandedWordID == word.id ? nil : word.id
+                                    }
+                                }
                             }
                             .onDelete { offsets in
-                                deleteWords(in: group, at: offsets)
+                                let wordsToDelete = offsets.map { group.words[$0] }
+                                for word in wordsToDelete {
+                                    store.remove(id: word.id)
+                                }
                             }
                         } header: {
                             Text(group.dateLabel)
@@ -496,24 +619,18 @@ struct BookmarkListView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var groupedByDate: [BookmarkGroup] {
+    private var groupedByDate: [DateGroup] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: store.bookmarks) { word in
             calendar.startOfDay(for: word.bookmarkedAt)
         }
         return grouped
-            .map { BookmarkGroup(date: $0.key, words: $0.value) }
+            .map { DateGroup(date: $0.key, words: $0.value) }
             .sorted { $0.date > $1.date }
-    }
-
-    private func deleteWords(in group: BookmarkGroup, at offsets: IndexSet) {
-        for index in offsets {
-            store.remove(id: group.words[index].id)
-        }
     }
 }
 
-private struct BookmarkGroup {
+private struct DateGroup {
     let date: Date
     let words: [BookmarkedWord]
 
@@ -525,102 +642,123 @@ private struct BookmarkGroup {
 private struct BookmarkRow: View {
     let word: BookmarkedWord
     let isExpanded: Bool
-    let onTap: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(word.spelling)
-                    .font(.body.bold())
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
-            }
+            Text(word.spelling)
+                .font(.system(.body, design: .serif))
+                .fontWeight(.medium)
 
             if isExpanded {
                 Text(word.sentence)
-                    .font(.subheadline)
+                    .font(.system(.subheadline, design: .serif))
                     .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
+        .padding(.vertical, 4)
     }
 }
 ```
 
-- [ ] **Step 2: Build to verify compilation**
+Add to the Xcode project's VocabReader target.
 
-```bash
-xcodebuild -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' build 2>&1 | tail -5
-```
+- [ ] **Step 2: Build and verify**
 
+Run: `xcodebuild build -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -10`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add VocabReader/Views/BookmarkListView.swift
+git add VocabReader/Views/BookmarkListView.swift VocabReader.xcodeproj
 git commit -m "feat: add BookmarkListView with date-grouped display"
 ```
 
 ---
 
-### Task 5: Wire Up Navigation from TodayView
+### Task 6: Add Navigation Entry Point in TodayView
 
 **Files:**
 - Modify: `VocabReader/Views/TodayView.swift`
 
-- [ ] **Step 1: Add star icon and navigation to TodayView**
+- [ ] **Step 1: Add star button and navigation destination**
 
-In `TodayView`, add a state variable for navigation:
-
-```swift
-@State private var showBookmarks = false
-```
-
-Add a leading toolbar button and a `navigationDestination` modifier. In the `toolbar` block, add a new `ToolbarItemGroup` for the leading side:
+In `TodayView`, add state and navigation for bookmarks:
 
 ```swift
-ToolbarItemGroup(placement: .topBarLeading) {
-    Button {
-        showBookmarks = true
-    } label: {
-        Image(systemName: "star")
-    }
-}
+struct TodayView: View {
+    @StateObject private var viewModel = TodayViewModel()
+    @StateObject private var bookmarkStore = BookmarkStore.shared
+    @State private var showSettings = false
+    @State private var showBookmarks = false
+    @State private var selectedArticle: Article?
+    @State private var settingsSnapshot = SettingsStore.shared.articleGenerationSettings
 ```
 
-Add a `navigationDestination` modifier after the existing `.navigationDestination(item: $selectedArticle)`:
+In the toolbar, add a leading star button:
 
 ```swift
-.navigationDestination(isPresented: $showBookmarks) {
-    BookmarkListView(store: BookmarkStore.shared)
-}
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    Button {
+                        showBookmarks = true
+                    } label: {
+                        Image(systemName: "star")
+                    }
+                }
+
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    // ... existing buttons unchanged
+                }
+            }
 ```
 
-- [ ] **Step 2: Build and run to verify**
+Add a `navigationDestination` for bookmarks:
 
-```bash
-xcodebuild -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' build 2>&1 | tail -5
+```swift
+            .navigationDestination(isPresented: $showBookmarks) {
+                BookmarkListView(store: bookmarkStore)
+            }
 ```
 
+- [ ] **Step 2: Build and verify**
+
+Run: `xcodebuild build -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -10`
 Expected: BUILD SUCCEEDED
 
-- [ ] **Step 3: Run all tests to verify nothing is broken**
-
-```bash
-xcodebuild test -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -15
-```
-
-Expected: All tests PASS.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add VocabReader/Views/TodayView.swift
-git commit -m "feat: add bookmark list entry in TodayView toolbar"
+git commit -m "feat: add star toolbar button to navigate to bookmark list"
+```
+
+---
+
+### Task 7: Run All Tests and Final Verification
+
+- [ ] **Step 1: Run all tests**
+
+Run: `xcodebuild test -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -30`
+Expected: All tests pass, including new `BookmarkedWordTests`, `BookmarkStoreTests`, `SentenceExtractorTests`.
+
+- [ ] **Step 2: Build and launch simulator for manual verification**
+
+Run: `xcodebuild build -project VocabReader.xcodeproj -scheme VocabReader -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -10`
+
+Manual checks:
+1. TodayView shows a star icon in the top-left toolbar
+2. Tapping the star navigates to an empty bookmark list with placeholder text
+3. In an article, long-press to select a word — edit menu shows "翻译" and "收藏"
+4. Tapping "收藏" adds the word to the bookmark list
+5. Bookmark list groups words by date
+6. Tapping a word row expands to show the sentence
+7. Swiping left on a row deletes the bookmark
+
+- [ ] **Step 3: Final commit if any fixes needed**
+
+```bash
+git add -A
+git commit -m "fix: address issues found during manual verification"
 ```
