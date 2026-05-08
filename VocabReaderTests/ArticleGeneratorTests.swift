@@ -122,6 +122,35 @@ final class ArticleGeneratorTests: XCTestCase {
         XCTAssertNil(nextArticle)
     }
 
+    func testPagingSessionRetriesSameBatchAfterArticleGenerationFailure() async throws {
+        var shouldFailFirstRequest = true
+        let mockLLM = MockLLMService { words, scene, topic in
+            if shouldFailFirstRequest {
+                shouldFailFirstRequest = false
+                throw ArticleGeneratorTestError.transientNetwork
+            }
+
+            return Article(id: UUID(), scene: scene, topic: topic, content: "text", targetWords: words)
+        }
+        let words = (1...20).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, batchSize: 10)
+        let session = generator.makePagingSession()
+
+        do {
+            _ = try await session.loadNextArticle()
+            XCTFail("第一次生成应抛出临时网络错误")
+        } catch ArticleGeneratorTestError.transientNetwork {
+        }
+
+        let retriedArticle = try await session.loadNextArticle()
+
+        XCTAssertEqual(
+            retriedArticle?.targetWords.map(\.spelling),
+            (1...10).map { "word\($0)" }
+        )
+    }
+
     func testUsesConfiguredScenesAndTopicWhenGeneratingArticles() async throws {
         let recorder = GenerationRecorder()
         let mockLLM = MockLLMService { words, scene, topic in
@@ -178,6 +207,10 @@ actor GenerationRecorder {
 }
 
 // MARK: - Mocks
+
+private enum ArticleGeneratorTestError: Error {
+    case transientNetwork
+}
 
 final class MockMaiMemoService: MaiMemoServiceProtocol {
     let words: [VocabWord]

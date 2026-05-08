@@ -118,7 +118,7 @@ final class TodayViewModel: ObservableObject {
             error = nil
         } catch {
             self.error = error.localizedDescription
-            hasMoreArticles = false
+            hasMoreArticles = true
         }
     }
 }

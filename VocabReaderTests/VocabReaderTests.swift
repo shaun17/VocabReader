@@ -80,6 +80,24 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertEqual(linkedRuns.first?.absoluteString, "word://river")
     }
 
+    func testArticleContentFormatterHandlesDuplicateTargetWordSpellings() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "Apple trees grow near another apple tree.",
+            targetWords: [
+                VocabWord(id: "1", spelling: "apple"),
+                VocabWord(id: "2", spelling: "Apple")
+            ]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(String(formatted.characters), article.content)
+        XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://apple", "word://apple"])
+    }
+
     func testArticleContentFormatterAppendsInlineTranslationActionAtParagraphEnd() {
         let formatted = ArticleContentFormatter().formatParagraph(
             content: "A calm river moved slowly.",
@@ -107,5 +125,49 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 收起")
         let links = formatted.runs.compactMap(\.link)
         XCTAssertEqual(links, [URL(string: "paragraph://2")!])
+    }
+
+    @MainActor
+    func testArticleAudioPlayerIgnoresSeekWhenArticleHasNoParagraphs() {
+        let speechService = MockSpeechService()
+        let player = ArticleAudioPlayerViewModel(paragraphs: [], speechService: speechService)
+
+        player.seek(to: 0.5)
+
+        XCTAssertEqual(player.playbackState, .idle)
+        XCTAssertNil(player.currentParagraphIndex)
+        XCTAssertEqual(player.progress, 0)
+        XCTAssertEqual(speechService.stopCallCount, 0)
+        XCTAssertTrue(speechService.spokenTexts.isEmpty)
+    }
+}
+
+private final class MockSpeechService: SpeechServiceProtocol {
+    private(set) var spokenTexts: [String] = []
+    private(set) var stopCallCount = 0
+    var isSpeaking = false
+    var isPaused = false
+
+    func speak(
+        _ text: String,
+        rate: Float,
+        onProgress: @escaping (Double) -> Void,
+        onFinish: @escaping () -> Void
+    ) {
+        spokenTexts.append(text)
+        isSpeaking = true
+    }
+
+    func pause() {
+        isPaused = true
+    }
+
+    func resume() {
+        isPaused = false
+    }
+
+    func stop() {
+        stopCallCount += 1
+        isSpeaking = false
     }
 }

@@ -153,8 +153,10 @@ private final class PagingSession: TodayArticlePagingSession {
             "Generating batch \(self.nextBatchIndex + 1, privacy: .public)/\(batches.count, privacy: .public) with \(batch.count, privacy: .public) words"
         )
 
+        // 只有 LLM 成功返回后才推进索引；网络异常时保留同一批词供下次下滑重试。
+        let article = try await llm.generateArticle(words: batch, scene: scene, topic: topic)
         nextBatchIndex += 1
-        return try await llm.generateArticle(words: batch, scene: scene, topic: topic)
+        return article
     }
 
     private func resolveBatches() async throws -> [[VocabWord]] {

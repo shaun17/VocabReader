@@ -28,11 +28,7 @@ struct ArticleContentFormatter {
     }
 
     func format(content: String, targetWords: [VocabWord]) -> AttributedString {
-        let wordMap = Dictionary(
-            uniqueKeysWithValues: targetWords.map {
-                ($0.spelling.lowercased(), $0)
-            }
-        )
+        let wordMap = makeWordMap(from: targetWords)
 
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
@@ -68,5 +64,14 @@ struct ArticleContentFormatter {
         }
 
         return result
+    }
+
+    /// 生成大小写不敏感的词表；重复拼写保留第一条，避免详情页格式化时崩溃。
+    private func makeWordMap(from targetWords: [VocabWord]) -> [String: VocabWord] {
+        targetWords.reduce(into: [:]) { result, word in
+            let key = word.spelling.lowercased()
+            guard result[key] == nil else { return }
+            result[key] = word
+        }
     }
 }

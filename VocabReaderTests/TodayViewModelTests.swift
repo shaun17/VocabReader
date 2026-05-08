@@ -81,7 +81,22 @@ final class TodayViewModelTests: XCTestCase {
             content: "second",
             targetWords: [VocabWord(id: "2", spelling: "banana")]
         )
-        let pagingSession = ControlledPagingSession(articles: [firstArticle, secondArticle], blockedLoadCall: 2)
+        let thirdArticle = Article(
+            id: UUID(),
+            scene: .dialogue,
+            content: "third",
+            targetWords: [VocabWord(id: "3", spelling: "river")]
+        )
+        let fourthArticle = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "fourth",
+            targetWords: [VocabWord(id: "4", spelling: "cloud")]
+        )
+        let pagingSession = ControlledPagingSession(
+            articles: [firstArticle, secondArticle, thirdArticle, fourthArticle],
+            blockedLoadCall: 4
+        )
         let viewModel = TodayViewModel {
             FixedPagingGenerator(session: pagingSession)
         }
@@ -99,8 +114,8 @@ final class TodayViewModelTests: XCTestCase {
         await firstLoadMore.value
 
         let totalCalls = await pagingSession.loadNextArticleCallCount
-        XCTAssertEqual(totalCalls, 2)
-        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second"])
+        XCTAssertEqual(totalCalls, 4)
+        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second", "third", "fourth"])
     }
 
     func testSaveSettingsUpdatesPaginationWhenTotalWordCountIncreasesWithoutReload() async {
@@ -302,6 +317,53 @@ final class TodayViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.articles.map(\.content), ["regenerated"])
         XCTAssertEqual(factory.makeCount, 2)
     }
+
+    func testLoadMoreCanRetryAfterTransientNetworkFailure() async {
+        let firstArticle = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "first",
+            targetWords: [VocabWord(id: "1", spelling: "apple")]
+        )
+        let secondArticle = Article(
+            id: UUID(),
+            scene: .science,
+            content: "second",
+            targetWords: [VocabWord(id: "2", spelling: "banana")]
+        )
+        let thirdArticle = Article(
+            id: UUID(),
+            scene: .dialogue,
+            content: "third",
+            targetWords: [VocabWord(id: "3", spelling: "river")]
+        )
+        let fourthArticle = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "fourth",
+            targetWords: [VocabWord(id: "4", spelling: "cloud")]
+        )
+        let pagingSession = TransientLoadMoreFailurePagingSession(
+            initialArticles: [firstArticle, secondArticle, thirdArticle],
+            retryArticle: fourthArticle
+        )
+        let viewModel = TodayViewModel {
+            FixedPagingGenerator(session: pagingSession)
+        }
+
+        await viewModel.loadArticles()
+        viewModel.setLoadMoreFooterVisible(true)
+        await viewModel.loadMoreIfNeededForListTail()
+
+        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second", "third"])
+        XCTAssertNotNil(viewModel.error)
+        XCTAssertTrue(viewModel.shouldShowLoadMoreFooter)
+
+        await viewModel.loadMoreIfNeededForListTail()
+
+        XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second", "third", "fourth"])
+        XCTAssertNil(viewModel.error)
+    }
 }
 
 @MainActor
@@ -454,5 +516,44 @@ private actor ControlledPagingSession: TodayArticlePagingSession {
     func resumeBlockedLoad() {
         resumeBlockedLoadContinuation?.resume()
         resumeBlockedLoadContinuation = nil
+    }
+}
+
+private actor TransientLoadMoreFailurePagingSession: TodayArticlePagingSession {
+    private var initialArticles: [Article]
+    private let retryArticle: Article
+    private var didFailLoadMore = false
+    private var didReturnRetryArticle = false
+
+    init(initialArticles: [Article], retryArticle: Article) {
+        self.initialArticles = initialArticles
+        self.retryArticle = retryArticle
+    }
+
+    func hasMoreArticles() async throws -> Bool {
+        !initialArticles.isEmpty || !didReturnRetryArticle
+    }
+
+    func loadNextArticle() async throws -> Article? {
+        if !initialArticles.isEmpty {
+            return initialArticles.removeFirst()
+        }
+
+        if !didFailLoadMore {
+            didFailLoadMore = true
+            throw TodayViewModelTestError.transientNetwork
+        }
+
+        guard !didReturnRetryArticle else { return nil }
+        didReturnRetryArticle = true
+        return retryArticle
+    }
+}
+
+private enum TodayViewModelTestError: LocalizedError {
+    case transientNetwork
+
+    var errorDescription: String? {
+        "临时网络异常"
     }
 }

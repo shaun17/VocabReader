@@ -20,7 +20,7 @@ targets:
       base:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: N4TQ2P9B46
-        CURRENT_PROJECT_VERSION: 202604132150
+        CURRENT_PROJECT_VERSION: 5
         MARKETING_VERSION: "1.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.vocabreader.app
         INFOPLIST_FILE: VocabReader/Info.plist

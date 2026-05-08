@@ -113,6 +113,44 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.enabledScenes, ArticleScene.allCases)
     }
 
+    func testApplyDraftAllowsExpandedGenerationLimits() {
+        let store = SettingsStore(storage: storage)
+        let draft = SettingsDraft(
+            maiMemoToken: "maimemo-token",
+            llmAPIKey: "llm-api-key",
+            llmBaseURL: "https://api.moonshot.cn/v1",
+            llmModel: "kimi-k2.5",
+            articleWordCount: 201,
+            wordsPerArticle: 52,
+            selectedTopic: .general,
+            enabledScenes: ArticleScene.allCases
+        )
+
+        store.apply(draft)
+
+        XCTAssertEqual(store.articleWordCount, 200)
+        XCTAssertEqual(store.wordsPerArticle, 50)
+    }
+
+    func testApplyDraftKeepsGenerationCountsAboveZero() {
+        let store = SettingsStore(storage: storage)
+        let draft = SettingsDraft(
+            maiMemoToken: "maimemo-token",
+            llmAPIKey: "llm-api-key",
+            llmBaseURL: "https://api.moonshot.cn/v1",
+            llmModel: "kimi-k2.5",
+            articleWordCount: 0,
+            wordsPerArticle: 0,
+            selectedTopic: .general,
+            enabledScenes: ArticleScene.allCases
+        )
+
+        store.apply(draft)
+
+        XCTAssertEqual(store.articleWordCount, 10)
+        XCTAssertEqual(store.wordsPerArticle, 5)
+    }
+
     private func clearStoredSettings() {
         storage.keychain.delete(key: storage.maiMemoTokenKey)
         storage.keychain.delete(key: storage.llmAPIKeyKey)

@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-enum PlaybackState {
+enum PlaybackState: Equatable {
     case idle
     case playing
     case paused
@@ -72,6 +72,11 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
     }
 
     func seek(to targetProgress: Double) {
+        guard !paragraphs.isEmpty else {
+            stopIfNeeded()
+            return
+        }
+
         let clamped = min(max(targetProgress, 0), 1)
         let targetChar = Int(clamped * Double(totalChars))
 
@@ -90,7 +95,7 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
     }
 
     private func startPlaying(from index: Int) {
-        guard index < paragraphs.count else {
+        guard !paragraphs.isEmpty, paragraphs.indices.contains(index) else {
             playbackState = .idle
             currentParagraphIndex = nil
             progress = 0
@@ -118,7 +123,11 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
     }
 
     private func updateProgress(paragraphProgress: Double) {
-        guard let index = currentParagraphIndex, index < charOffsets.count else { return }
+        guard
+            let index = currentParagraphIndex,
+            paragraphs.indices.contains(index),
+            charOffsets.indices.contains(index)
+        else { return }
         let base = Double(charOffsets[index])
         let paragraphLen = Double(paragraphs[index].content.count)
         progress = (base + paragraphLen * paragraphProgress) / Double(totalChars)
@@ -134,5 +143,12 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
             currentParagraphIndex = nil
             progress = 0
         }
+    }
+
+    /// 空文章或空段落下只重置内存状态，不额外打断语音服务。
+    private func stopIfNeeded() {
+        playbackState = .idle
+        currentParagraphIndex = nil
+        progress = 0
     }
 }

@@ -144,15 +144,11 @@ final class SettingsStore: ObservableObject {
     }
 
     private static func normalizedArticleWordCount(_ value: Int) -> Int {
-        let clamped = min(max(value, 10), 100)
-        let rounded = ((clamped + 5) / 10) * 10
-        return min(max(rounded, 10), 100)
+        ArticleGenerationLimits.normalizedArticleWordCount(value)
     }
 
     private static func normalizedWordsPerArticle(_ value: Int) -> Int {
-        let clamped = min(max(value, 5), 30)
-        let rounded = ((clamped + 2) / 5) * 5
-        return min(max(rounded, 5), 30)
+        ArticleGenerationLimits.normalizedWordsPerArticle(value)
     }
 
     /// 规范化体裁列表，兼容旧版本缺失值并维持固定展示顺序。

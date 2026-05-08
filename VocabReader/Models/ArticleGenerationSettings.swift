@@ -1,5 +1,41 @@
 import Foundation
 
+enum ArticleGenerationLimits {
+    static let articleWordCountRange = 10...200
+    static let wordsPerArticleRange = 5...50
+    static let articleWordCountStep = 10
+    static let wordsPerArticleStep = 5
+
+    /// 将今日总词汇量限制在产品允许范围内，并按设置页步长吸附。
+    static func normalizedArticleWordCount(_ value: Int) -> Int {
+        normalizedSteppedValue(
+            value,
+            range: articleWordCountRange,
+            step: articleWordCountStep
+        )
+    }
+
+    /// 将每篇词汇量限制在产品允许范围内，并按设置页步长吸附。
+    static func normalizedWordsPerArticle(_ value: Int) -> Int {
+        normalizedSteppedValue(
+            value,
+            range: wordsPerArticleRange,
+            step: wordsPerArticleStep
+        )
+    }
+
+    /// 统一处理数值下限、上限和步长，确保历史脏值或手输 0 不会进入生成流程。
+    private static func normalizedSteppedValue(
+        _ value: Int,
+        range: ClosedRange<Int>,
+        step: Int
+    ) -> Int {
+        let clamped = min(max(value, range.lowerBound), range.upperBound)
+        let rounded = ((clamped - range.lowerBound + step / 2) / step) * step + range.lowerBound
+        return min(max(rounded, range.lowerBound), range.upperBound)
+    }
+}
+
 struct ArticleGenerationSettings: Equatable {
     let articleWordCount: Int
     let wordsPerArticle: Int

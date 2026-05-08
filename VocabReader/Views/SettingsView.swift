@@ -49,8 +49,8 @@ struct SettingsView: View {
                         EditableStepper(
                             title: "今日单词",
                             value: $draft.articleWordCount,
-                            range: 10...100,
-                            step: 10
+                            range: ArticleGenerationLimits.articleWordCountRange,
+                            step: ArticleGenerationLimits.articleWordCountStep
                         )
                     }
 
@@ -58,8 +58,8 @@ struct SettingsView: View {
                         EditableStepper(
                             title: "每篇词汇",
                             value: $draft.wordsPerArticle,
-                            range: 5...30,
-                            step: 5
+                            range: ArticleGenerationLimits.wordsPerArticleRange,
+                            step: ArticleGenerationLimits.wordsPerArticleStep
                         )
                     }
 
@@ -349,6 +349,8 @@ private struct EditableStepper: View {
             text = String(value)
             return
         }
+
+        // 手动输入同样走范围和步长吸附，避免 0 或越界值留在草稿里。
         let clamped = min(max(parsed, range.lowerBound), range.upperBound)
         let snapped = range.lowerBound + ((clamped - range.lowerBound + step / 2) / step) * step
         let final = min(snapped, range.upperBound)
