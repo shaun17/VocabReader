@@ -173,6 +173,44 @@ private struct BookmarkSuccessToast: View {
     }
 }
 
+enum ParagraphSupplementDrawerMutation: Equatable {
+    case open(token: Int)
+    case close(token: Int)
+}
+
+struct ParagraphSupplementDrawerState<Supplement: Equatable>: Equatable {
+    private(set) var renderedSupplement: Supplement?
+    private(set) var isOpen = false
+    private var token = 0
+
+    /// 用单调递增 token 标记每次开合，避免关闭动画结束后误删后续新内容。
+    mutating func update(with supplement: Supplement?) -> ParagraphSupplementDrawerMutation {
+        token += 1
+        let currentToken = token
+
+        guard let supplement else {
+            isOpen = false
+            return .close(token: currentToken)
+        }
+
+        renderedSupplement = supplement
+        isOpen = true
+        return .open(token: currentToken)
+    }
+
+    /// 只有当前仍处于关闭状态且 token 匹配时，才真正清空渲染内容。
+    mutating func finishClose(token closeToken: Int) {
+        guard token == closeToken, !isOpen else { return }
+        renderedSupplement = nil
+    }
+}
+
+private enum ArticleParagraphSupplement: Equatable {
+    case loading(String)
+    case expanded(String)
+    case error(String)
+}
+
 private struct ArticleParagraphSection: View {
     let paragraph: ArticleParagraph
     let targetWords: [VocabWord]
@@ -183,6 +221,8 @@ private struct ArticleParagraphSection: View {
     let onBookmarkSelection: (String) -> Void
 
     @StateObject private var viewModel: ArticleParagraphTranslationViewModel
+    @State private var drawerState = ParagraphSupplementDrawerState<ArticleParagraphSupplement>()
+    private static let supplementAnimationDuration = 0.26
 
     init(
         paragraph: ArticleParagraph,
@@ -210,46 +250,39 @@ private struct ArticleParagraphSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             SelectableAttributedTextView(
                 attributedText: NSAttributedString(
                     formatter.formatParagraph(
                         content: paragraph.content,
-                        targetWords: targetWords,
-                        paragraphIndex: paragraph.index,
-                        translationActionTitle: translationActionTitle,
-                        analysisActionTitle: analysisActionTitle
+                        targetWords: targetWords
                     )
                 ),
                 onOpenURL: { url in
-                    if url.scheme == "paragraph", url.host(percentEncoded: false) == "\(paragraph.index)" {
-                        handleParagraphAction(url)
-                        return
-                    }
-
                     if url.scheme == "word", let spelling = url.host(percentEncoded: false) {
                         onWordTap(spelling)
                     }
                 },
-                onBookmarkSelection: onBookmarkSelection
+                onBookmarkSelection: onBookmarkSelection,
+                translationActionTitle: translationActionTitle,
+                analysisActionTitle: analysisActionTitle,
+                onTranslateAction: {
+                    Task {
+                        await viewModel.didTapTranslateButton()
+                    }
+                },
+                onAnalyzeAction: {
+                    Task {
+                        await viewModel.didTapAnalyzeButton()
+                    }
+                }
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if shouldShowSupplement {
-                VStack(alignment: .leading, spacing: 10) {
-                    if viewModel.isLoading {
-                        loadingView
-                            .transition(supplementTransition)
-                    } else if let expandedText {
-                        expandedContentView(expandedText)
-                            .transition(supplementTransition)
-                    } else if let error = viewModel.error {
-                        errorView(error)
-                            .transition(supplementTransition)
-                    }
+            if let renderedSupplement = drawerState.renderedSupplement {
+                ParagraphSupplementDrawer(isOpen: drawerState.isOpen, animation: supplementAnimation) {
+                    supplementContent(for: renderedSupplement)
                 }
-                .clipped()
-                .transition(supplementTransition)
             }
         }
         .padding(8)
@@ -258,9 +291,12 @@ private struct ArticleParagraphSection: View {
                 .fill(isHighlighted ? Color.readingTitle.opacity(0.08) : Color.clear)
         )
         .animation(.easeInOut(duration: 0.3), value: isHighlighted)
-        .animation(supplementAnimation, value: viewModel.loadingPanel)
-        .animation(supplementAnimation, value: viewModel.expandedPanel)
-        .animation(supplementAnimation, value: viewModel.error)
+        .onAppear {
+            updateSupplementDrawer(with: currentSupplement, animated: false)
+        }
+        .onChange(of: currentSupplement) { _, newSupplement in
+            updateSupplementDrawer(with: newSupplement, animated: true)
+        }
         .onTapGesture(count: 2) {
             onTapParagraph()
         }
@@ -296,19 +332,62 @@ private struct ArticleParagraphSection: View {
         }
     }
 
-    private var shouldShowSupplement: Bool {
-        viewModel.isLoading || expandedText != nil || viewModel.error != nil
-    }
-
     private var supplementAnimation: Animation {
-        .easeInOut(duration: 0.28)
+        .easeInOut(duration: Self.supplementAnimationDuration)
     }
 
-    private var supplementTransition: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: .top).combined(with: .opacity),
-            removal: .opacity
-        )
+    private var currentSupplement: ArticleParagraphSupplement? {
+        if viewModel.isLoading {
+            return .loading(loadingMessage)
+        }
+
+        if let expandedText {
+            return .expanded(expandedText)
+        }
+
+        if let error = viewModel.error {
+            return .error(error)
+        }
+
+        return nil
+    }
+
+    /// 外层只控制抽屉开合；内容在关闭动画结束前保留，避免文章先回流、旧内容再淡出。
+    private func updateSupplementDrawer(with supplement: ArticleParagraphSupplement?, animated: Bool) {
+        // 没有已渲染内容且新状态也是空时，不启动关闭计时，避免普通段落出现时产生多余状态更新。
+        guard supplement != nil || drawerState.renderedSupplement != nil || drawerState.isOpen else { return }
+
+        var mutation: ParagraphSupplementDrawerMutation?
+        let updates = {
+            mutation = drawerState.update(with: supplement)
+        }
+
+        if animated {
+            withAnimation(supplementAnimation, updates)
+        } else {
+            updates()
+        }
+
+        guard case let .close(token) = mutation else { return }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.supplementAnimationDuration * 1_000_000_000))
+            drawerState.finishClose(token: token)
+        }
+    }
+
+    @ViewBuilder
+    private func supplementContent(for supplement: ArticleParagraphSupplement) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            switch supplement {
+            case .loading:
+                loadingView
+            case let .expanded(expandedText):
+                expandedContentView(expandedText)
+            case let .error(error):
+                errorView(error)
+            }
+        }
     }
 
     private var loadingView: some View {
@@ -320,7 +399,7 @@ private struct ArticleParagraphSection: View {
         .foregroundStyle(.secondary)
     }
 
-    /// 让翻译和解析内容使用同一套容器样式，展开时通过上缘滑入避免突兀闪现。
+    /// 让翻译和解析内容使用同一套容器样式，展开时只改变下方区域高度。
     private func expandedContentView(_ text: String) -> some View {
         Text(text)
             .font(.body)
@@ -337,21 +416,44 @@ private struct ArticleParagraphSection: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
     }
+}
 
-    /// 根据段落操作链接分发到翻译或解析，避免两个入口触发同一个动作。
-    private func handleParagraphAction(_ url: URL) {
-        switch url.path {
-        case "/translation", "":
-            Task {
-                await viewModel.didTapTranslateButton()
+private struct ParagraphSupplementDrawer<Content: View>: View {
+    let isOpen: Bool
+    let animation: Animation
+    @ViewBuilder let content: () -> Content
+
+    @State private var measuredHeight: CGFloat = 0
+
+    var body: some View {
+        content()
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: ParagraphSupplementHeightPreferenceKey.self,
+                        value: proxy.size.height
+                    )
+                }
             }
-        case "/analysis":
-            Task {
-                await viewModel.didTapAnalyzeButton()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: isOpen ? measuredHeight : 0, alignment: .top)
+            .clipped()
+            .accessibilityHidden(!isOpen)
+            .animation(animation, value: isOpen)
+            .animation(animation, value: measuredHeight)
+            .onPreferenceChange(ParagraphSupplementHeightPreferenceKey.self) { height in
+                measuredHeight = height
             }
-        default:
-            return
-        }
+    }
+}
+
+private struct ParagraphSupplementHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    /// 多层内容同时上报高度时取最大值，确保抽屉边界包住完整内容。
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -359,6 +461,10 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     let attributedText: NSAttributedString
     let onOpenURL: (URL) -> Void
     let onBookmarkSelection: (String) -> Void
+    let translationActionTitle: String
+    let analysisActionTitle: String
+    let onTranslateAction: () -> Void
+    let onAnalyzeAction: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -367,39 +473,36 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         )
     }
 
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+    func makeUIView(context: Context) -> InlineActionTextContainer {
+        let textView = InlineActionTextContainer()
         textView.delegate = context.coordinator
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isScrollEnabled = false
-        textView.backgroundColor = .clear
-        textView.font = bodyFont
-        textView.textColor = .label
-        textView.textContainerInset = .zero
-        textView.textContainer.lineFragmentPadding = 0
-        textView.adjustsFontForContentSizeCategory = true
-        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return textView
     }
 
-    func updateUIView(_ uiView: UITextView, context: Context) {
+    func updateUIView(_ uiView: InlineActionTextContainer, context: Context) {
         let styledText = makeStyledAttributedText()
-        if uiView.attributedText != styledText {
-            uiView.attributedText = styledText
+        if uiView.textView.attributedText != styledText {
+            uiView.textView.attributedText = styledText
         }
+        uiView.setActionTitles(
+            translation: translationActionTitle,
+            analysis: analysisActionTitle
+        )
+        uiView.onTranslateAction = onTranslateAction
+        uiView.onAnalyzeAction = onAnalyzeAction
         context.coordinator.onOpenURL = onOpenURL
         context.coordinator.onBookmarkSelection = onBookmarkSelection
+        uiView.invalidateIntrinsicContentSize()
+        uiView.setNeedsLayout()
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: InlineActionTextContainer, context: Context) -> CGSize? {
         let width = proposal.width ?? 0
         guard width > 0 else { return nil }
 
-        let targetSize = CGSize(width: width, height: .greatestFiniteMagnitude)
-        let fittingSize = uiView.sizeThatFits(targetSize)
-        return CGSize(width: width, height: fittingSize.height)
+        return uiView.sizeThatFits(
+            CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
     }
 
     private func makeStyledAttributedText() -> NSAttributedString {
@@ -438,6 +541,168 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         let serifDescriptor = baseFont.fontDescriptor.withDesign(.serif) ?? baseFont.fontDescriptor
         let serifFont = UIFont(descriptor: serifDescriptor, size: baseFont.pointSize + 2)
         return UIFontMetrics(forTextStyle: .body).scaledFont(for: serifFont)
+    }
+
+    final class InlineActionTextContainer: UIView {
+        let textView = UITextView()
+        var onTranslateAction: (() -> Void)?
+        var onAnalyzeAction: (() -> Void)?
+
+        var delegate: UITextViewDelegate? {
+            get { textView.delegate }
+            set { textView.delegate = newValue }
+        }
+
+        private let translationButton = UIButton(type: .system)
+        private let analysisButton = UIButton(type: .system)
+        private let actionStack = UIStackView()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            configureTextView()
+            configureActionButtons()
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            configureTextView()
+            configureActionButtons()
+        }
+
+        func setActionTitles(translation: String, analysis: String) {
+            setTitle(translation, for: translationButton)
+            setTitle(analysis, for: analysisButton)
+            translationButton.accessibilityLabel = translation
+            analysisButton.accessibilityLabel = analysis
+            setNeedsLayout()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            applyLayout(for: bounds.width)
+        }
+
+        override func sizeThatFits(_ size: CGSize) -> CGSize {
+            guard size.width > 0 else { return .zero }
+            let layout = measuredLayout(for: size.width)
+            return CGSize(width: size.width, height: layout.totalHeight)
+        }
+
+        /// 初始化正文 UITextView，保留选词、系统菜单和单词链接能力。
+        private func configureTextView() {
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.isScrollEnabled = false
+            textView.backgroundColor = .clear
+            textView.textColor = .label
+            textView.textContainerInset = .zero
+            textView.textContainer.lineFragmentPadding = 0
+            textView.adjustsFontForContentSizeCategory = true
+            textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            addSubview(textView)
+        }
+
+        /// 初始化真实按钮，由容器负责把它们摆到正文最后一行后面。
+        private func configureActionButtons() {
+            let actionFont = UIFontMetrics(forTextStyle: .footnote)
+                .scaledFont(for: UIFont.systemFont(ofSize: 13))
+
+            [translationButton, analysisButton].forEach { button in
+                var configuration = UIButton.Configuration.plain()
+                configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2)
+                configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                    var outgoing = incoming
+                    outgoing.font = actionFont
+                    return outgoing
+                }
+                button.configuration = configuration
+                button.titleLabel?.adjustsFontForContentSizeCategory = true
+            }
+
+            translationButton.addTarget(self, action: #selector(didTapTranslate), for: .touchUpInside)
+            analysisButton.addTarget(self, action: #selector(didTapAnalyze), for: .touchUpInside)
+
+            actionStack.axis = .horizontal
+            actionStack.alignment = .center
+            actionStack.spacing = 20
+            actionStack.addArrangedSubview(translationButton)
+            actionStack.addArrangedSubview(analysisButton)
+            addSubview(actionStack)
+        }
+
+        private func setTitle(_ title: String, for button: UIButton) {
+            var configuration = button.configuration ?? .plain()
+            configuration.title = title
+            button.configuration = configuration
+        }
+
+        @objc private func didTapTranslate() {
+            onTranslateAction?()
+        }
+
+        @objc private func didTapAnalyze() {
+            onAnalyzeAction?()
+        }
+
+        /// 根据最后一个 glyph 的位置计算按钮坐标；行尾空间不足时才自然换到下一行。
+        private func measuredLayout(for width: CGFloat) -> (textHeight: CGFloat, actionFrame: CGRect, totalHeight: CGFloat) {
+            let textHeight = measuredTextHeight(for: width)
+            let actionSize = actionStack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+            let line = lastLineLayout(width: width, textHeight: textHeight)
+            let horizontalGap: CGFloat = 10
+            let verticalGap: CGFloat = 2
+
+            var actionX = line.endX + horizontalGap
+            var actionY = line.rect.midY - actionSize.height / 2
+
+            if actionX + actionSize.width > width {
+                actionX = 0
+                actionY = textHeight + verticalGap
+            }
+
+            actionY = max(0, actionY)
+
+            return (
+                textHeight: textHeight,
+                actionFrame: CGRect(origin: CGPoint(x: actionX, y: actionY), size: actionSize),
+                totalHeight: ceil(max(textHeight, actionY + actionSize.height))
+            )
+        }
+
+        private func applyLayout(for width: CGFloat) {
+            guard width > 0 else { return }
+            let layout = measuredLayout(for: width)
+            textView.frame = CGRect(x: 0, y: 0, width: width, height: layout.textHeight)
+            actionStack.frame = layout.actionFrame
+        }
+
+        private func measuredTextHeight(for width: CGFloat) -> CGFloat {
+            let targetSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+            return ceil(textView.sizeThatFits(targetSize).height)
+        }
+
+        private func lastLineLayout(width: CGFloat, textHeight: CGFloat) -> (endX: CGFloat, rect: CGRect) {
+            textView.frame = CGRect(x: 0, y: 0, width: width, height: textHeight)
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+
+            let glyphCount = textView.layoutManager.numberOfGlyphs
+            guard glyphCount > 0 else {
+                return (0, CGRect(x: 0, y: 0, width: 0, height: textHeight))
+            }
+
+            let lastGlyphIndex = glyphCount - 1
+            let lineRect = textView.layoutManager.lineFragmentUsedRect(
+                forGlyphAt: lastGlyphIndex,
+                effectiveRange: nil
+            )
+            let glyphRect = textView.layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: lastGlyphIndex, length: 1),
+                in: textView.textContainer
+            )
+
+            return (ceil(glyphRect.maxX), lineRect)
+        }
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {

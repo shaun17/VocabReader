@@ -3,43 +3,17 @@ import SwiftUI
 
 struct ArticleContentFormatter {
     private let wordPattern = #"[A-Za-z]+(?:['’-][A-Za-z]+)*"#
-    private let paragraphActionSeparator = " "
-    private let paragraphActionSpacing = "   "
 
     func format(article: Article) -> AttributedString {
         format(content: article.content, targetWords: article.targetWords)
     }
 
-    /// 格式化单个段落，并在段落末尾追加“翻译 / 解析”两个内联操作入口。
+    /// 格式化单个段落，只处理正文和单词链接；段落操作按钮由 SwiftUI 原生 Button 承担。
     func formatParagraph(
         content: String,
-        targetWords: [VocabWord],
-        paragraphIndex: Int,
-        translationActionTitle: String,
-        analysisActionTitle: String
+        targetWords: [VocabWord]
     ) -> AttributedString {
-        var result = format(content: content, targetWords: targetWords)
-        result += AttributedString(paragraphActionSeparator)
-        result += makeParagraphAction(
-            title: translationActionTitle,
-            url: URL(string: "paragraph://\(paragraphIndex)/translation")
-        )
-        result += AttributedString(paragraphActionSpacing)
-        result += makeParagraphAction(
-            title: analysisActionTitle,
-            url: URL(string: "paragraph://\(paragraphIndex)/analysis")
-        )
-
-        return result
-    }
-
-    /// 创建段落操作链接，保证“翻译”和“解析”在正文中使用相同字号和颜色。
-    private func makeParagraphAction(title: String, url: URL?) -> AttributedString {
-        var action = AttributedString(title)
-        action.foregroundColor = .blue
-        action.font = .system(size: 11)
-        action.link = url
-        return action
+        format(content: content, targetWords: targetWords)
     }
 
     /// 标记文章里的目标词，供点击查词使用。

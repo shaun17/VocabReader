@@ -98,36 +98,49 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://apple", "word://apple"])
     }
 
-    func testArticleContentFormatterAppendsInlineTranslationActionAtParagraphEnd() {
+    func testArticleContentFormatterKeepsParagraphActionsOutOfSelectableText() {
         let formatted = ArticleContentFormatter().formatParagraph(
             content: "A calm river moved slowly.",
-            targetWords: [VocabWord(id: "1", spelling: "river")],
-            paragraphIndex: 2,
-            translationActionTitle: "翻译",
-            analysisActionTitle: "解析"
+            targetWords: [VocabWord(id: "1", spelling: "river")]
         )
 
-        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 翻译   解析")
+        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly.")
         let links = formatted.runs.compactMap(\.link)
 
-        XCTAssertEqual(links.count, 3)
-        XCTAssertTrue(links.contains(URL(string: "word://river")!))
-        XCTAssertTrue(links.contains(URL(string: "paragraph://2/translation")!))
-        XCTAssertTrue(links.contains(URL(string: "paragraph://2/analysis")!))
+        XCTAssertEqual(links, [URL(string: "word://river")!])
     }
 
-    func testArticleContentFormatterUsesInlineActionTitleProvidedByViewState() {
-        let formatted = ArticleContentFormatter().formatParagraph(
-            content: "A calm river moved slowly.",
-            targetWords: [],
-            paragraphIndex: 2,
-            translationActionTitle: "收起",
-            analysisActionTitle: "解析"
-        )
+    func testParagraphSupplementDrawerStateKeepsContentUntilCloseFinishes() {
+        var state = ParagraphSupplementDrawerState<String>()
 
-        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 收起   解析")
-        let links = formatted.runs.compactMap(\.link)
-        XCTAssertEqual(links, [URL(string: "paragraph://2/translation")!, URL(string: "paragraph://2/analysis")!])
+        let openMutation = state.update(with: "解析内容")
+        let closeMutation = state.update(with: nil)
+
+        XCTAssertEqual(openMutation, .open(token: 1))
+        XCTAssertEqual(closeMutation, .close(token: 2))
+        XCTAssertEqual(state.renderedSupplement, "解析内容")
+        XCTAssertFalse(state.isOpen)
+
+        state.finishClose(token: 2)
+
+        XCTAssertNil(state.renderedSupplement)
+    }
+
+    func testParagraphSupplementDrawerStateIgnoresStaleCloseCompletion() {
+        var state = ParagraphSupplementDrawerState<String>()
+
+        _ = state.update(with: "旧解析")
+        let closeMutation = state.update(with: nil)
+        _ = state.update(with: "新解析")
+
+        if case let .close(token) = closeMutation {
+            state.finishClose(token: token)
+        } else {
+            XCTFail("关闭补充内容时应该返回 close mutation")
+        }
+
+        XCTAssertEqual(state.renderedSupplement, "新解析")
+        XCTAssertTrue(state.isOpen)
     }
 
     @MainActor
