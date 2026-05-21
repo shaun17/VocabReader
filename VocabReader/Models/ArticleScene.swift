@@ -22,7 +22,11 @@ enum ArticleScene: String, CaseIterable, Identifiable, Codable {
         case .dialogue:
             return """
             Use clear dialogue formatting. Every spoken turn must start on a new line with a speaker label, \
-            for example "A:" and "B:". Keep most turns to 1-2 sentences. Do not collapse the dialogue into large prose paragraphs.
+            for example "A:" and "B:". Keep most turns to 1-2 sentences. Do not collapse the dialogue into large prose paragraphs. \
+            Build the dialogue around one realistic situation with a concrete problem, decision, or mild conflict that readers may meet in daily life, study, work, service, travel, or relationships. \
+            Each speaker should have a clear goal, emotion, and response strategy, so the exchange has tension and progression instead of flat turn-taking. \
+            Include reusable conversation skills such as politely disagreeing, asking for clarification, showing empathy, negotiating, apologizing, giving feedback, or making a request; show them naturally in the spoken lines, not as explanations. \
+            Avoid shallow one-question-one-answer exchanges, generic filler, and small talk about coffee unless the vocabulary requires it. End with a useful outcome or changed understanding.
             """
         case .science:
             return """

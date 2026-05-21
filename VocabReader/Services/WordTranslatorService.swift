@@ -6,6 +6,7 @@ protocol WordTranslatorServiceProtocol {
 
 protocol ArticleParagraphTranslatorProtocol {
     func translate(paragraph: String) async throws -> String
+    func analyze(paragraph: String) async throws -> String
 }
 
 final class WordTranslatorService {
@@ -23,7 +24,7 @@ final class WordTranslatorService {
         Return only the Chinese translation without explanation, examples, numbering, or extra punctuation.
         """
 
-        return try await performTranslationRequest(prompt: prompt, maxTokens: config.translationMaxTokens)
+        return try await performLLMTextRequest(prompt: prompt, maxTokens: config.translationMaxTokens)
     }
 
     func translate(paragraph: String) async throws -> String {
@@ -36,10 +37,26 @@ final class WordTranslatorService {
         \(paragraph)
         """
 
-        return try await performTranslationRequest(prompt: prompt, maxTokens: config.paragraphTranslationMaxTokens)
+        return try await performLLMTextRequest(prompt: prompt, maxTokens: config.paragraphTranslationMaxTokens)
     }
 
-    private func performTranslationRequest(prompt: String, maxTokens: Int) async throws -> String {
+    func analyze(paragraph: String) async throws -> String {
+        let prompt = """
+        Analyze the following English paragraph for Chinese learners.
+        Explain only practical language points that help the reader quickly understand and use the paragraph: grammar patterns, idioms, slang, implied tone, sentence logic, and natural expression habits.
+        Do not translate the whole paragraph. Do not explain every word mechanically.
+        Use concise Chinese bullet points. Keep the analysis focused on the most useful 2-4 points.
+        Return only the analysis without extra commentary.
+
+        Paragraph:
+        \(paragraph)
+        """
+
+        return try await performLLMTextRequest(prompt: prompt, maxTokens: config.paragraphAnalysisMaxTokens)
+    }
+
+    /// 发送通用 LLM 文本请求，供查词、段落翻译和段落解析复用。
+    private func performLLMTextRequest(prompt: String, maxTokens: Int) async throws -> String {
         let base = config.baseURL.hasSuffix("/") ? String(config.baseURL.dropLast()) : config.baseURL
         guard let url = URL(string: "\(base)/chat/completions") else {
             throw LLMError.invalidResponse

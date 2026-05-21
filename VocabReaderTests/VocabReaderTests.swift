@@ -103,15 +103,17 @@ final class VocabReaderTests: XCTestCase {
             content: "A calm river moved slowly.",
             targetWords: [VocabWord(id: "1", spelling: "river")],
             paragraphIndex: 2,
-            actionTitle: "翻译"
+            translationActionTitle: "翻译",
+            analysisActionTitle: "解析"
         )
 
-        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 翻译")
+        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 翻译   解析")
         let links = formatted.runs.compactMap(\.link)
 
-        XCTAssertEqual(links.count, 2)
+        XCTAssertEqual(links.count, 3)
         XCTAssertTrue(links.contains(URL(string: "word://river")!))
-        XCTAssertTrue(links.contains(URL(string: "paragraph://2")!))
+        XCTAssertTrue(links.contains(URL(string: "paragraph://2/translation")!))
+        XCTAssertTrue(links.contains(URL(string: "paragraph://2/analysis")!))
     }
 
     func testArticleContentFormatterUsesInlineActionTitleProvidedByViewState() {
@@ -119,12 +121,13 @@ final class VocabReaderTests: XCTestCase {
             content: "A calm river moved slowly.",
             targetWords: [],
             paragraphIndex: 2,
-            actionTitle: "收起"
+            translationActionTitle: "收起",
+            analysisActionTitle: "解析"
         )
 
-        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 收起")
+        XCTAssertEqual(String(formatted.characters), "A calm river moved slowly. 收起   解析")
         let links = formatted.runs.compactMap(\.link)
-        XCTAssertEqual(links, [URL(string: "paragraph://2")!])
+        XCTAssertEqual(links, [URL(string: "paragraph://2/translation")!, URL(string: "paragraph://2/analysis")!])
     }
 
     @MainActor

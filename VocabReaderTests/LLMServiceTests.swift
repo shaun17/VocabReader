@@ -135,6 +135,29 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(bodyString.contains("Do not collapse the dialogue into large prose paragraphs"))
     }
 
+    func testDialoguePromptRequiresPracticalConversationSkillsAndEmotionalDepth() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "text"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "feedback")], scene: .dialogue, topic: .general)
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("Build the dialogue around one realistic situation"))
+        XCTAssertTrue(bodyString.contains("Each speaker should have a clear goal, emotion, and response strategy"))
+        XCTAssertTrue(bodyString.contains("Include reusable conversation skills"))
+        XCTAssertTrue(bodyString.contains("Avoid shallow one-question-one-answer exchanges"))
+    }
+
     func testNovelPromptRequiresParagraphsAndAccurateGrammar() async throws {
         var capturedRequest: URLRequest?
         let json = """

@@ -27,6 +27,7 @@ struct LLMConfig {
     var articleMaxTokens: Int = 900
     var translationMaxTokens: Int = 80
     var paragraphTranslationMaxTokens: Int = 240
+    var paragraphAnalysisMaxTokens: Int = 320
 
     var usesKimiCompatibilityMode: Bool {
         let normalizedModel = model.lowercased()

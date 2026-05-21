@@ -217,14 +217,13 @@ private struct ArticleParagraphSection: View {
                         content: paragraph.content,
                         targetWords: targetWords,
                         paragraphIndex: paragraph.index,
-                        actionTitle: inlineActionTitle
+                        translationActionTitle: translationActionTitle,
+                        analysisActionTitle: analysisActionTitle
                     )
                 ),
                 onOpenURL: { url in
                     if url.scheme == "paragraph", url.host(percentEncoded: false) == "\(paragraph.index)" {
-                        Task {
-                            await viewModel.didTapTranslateButton()
-                        }
+                        handleParagraphAction(url)
                         return
                     }
 
@@ -236,28 +235,21 @@ private struct ArticleParagraphSection: View {
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if viewModel.isLoading {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("翻译中…")
+            if shouldShowSupplement {
+                VStack(alignment: .leading, spacing: 10) {
+                    if viewModel.isLoading {
+                        loadingView
+                            .transition(supplementTransition)
+                    } else if let expandedText {
+                        expandedContentView(expandedText)
+                            .transition(supplementTransition)
+                    } else if let error = viewModel.error {
+                        errorView(error)
+                            .transition(supplementTransition)
+                    }
                 }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-
-            if let translation = viewModel.translation, viewModel.isExpanded {
-                Text(translation)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.readingRule.opacity(0.3))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            } else if let error = viewModel.error {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                .clipped()
+                .transition(supplementTransition)
             }
         }
         .padding(8)
@@ -266,13 +258,100 @@ private struct ArticleParagraphSection: View {
                 .fill(isHighlighted ? Color.readingTitle.opacity(0.08) : Color.clear)
         )
         .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .animation(supplementAnimation, value: viewModel.loadingPanel)
+        .animation(supplementAnimation, value: viewModel.expandedPanel)
+        .animation(supplementAnimation, value: viewModel.error)
         .onTapGesture(count: 2) {
             onTapParagraph()
         }
     }
 
-    private var inlineActionTitle: String {
-        viewModel.isExpanded ? "收起" : "翻译"
+    private var translationActionTitle: String {
+        viewModel.expandedPanel == .translation ? "收起" : "翻译"
+    }
+
+    private var analysisActionTitle: String {
+        viewModel.expandedPanel == .analysis ? "收起" : "解析"
+    }
+
+    private var loadingMessage: String {
+        switch viewModel.loadingPanel {
+        case .translation:
+            return "翻译中…"
+        case .analysis:
+            return "解析中…"
+        case nil:
+            return "加载中…"
+        }
+    }
+
+    private var expandedText: String? {
+        switch viewModel.expandedPanel {
+        case .translation:
+            return viewModel.translation
+        case .analysis:
+            return viewModel.analysis
+        case nil:
+            return nil
+        }
+    }
+
+    private var shouldShowSupplement: Bool {
+        viewModel.isLoading || expandedText != nil || viewModel.error != nil
+    }
+
+    private var supplementAnimation: Animation {
+        .easeInOut(duration: 0.28)
+    }
+
+    private var supplementTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .opacity
+        )
+    }
+
+    private var loadingView: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text(loadingMessage)
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+
+    /// 让翻译和解析内容使用同一套容器样式，展开时通过上缘滑入避免突兀闪现。
+    private func expandedContentView(_ text: String) -> some View {
+        Text(text)
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.readingRule.opacity(0.3))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func errorView(_ error: String) -> some View {
+        Text(error)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+    }
+
+    /// 根据段落操作链接分发到翻译或解析，避免两个入口触发同一个动作。
+    private func handleParagraphAction(_ url: URL) {
+        switch url.path {
+        case "/translation", "":
+            Task {
+                await viewModel.didTapTranslateButton()
+            }
+        case "/analysis":
+            Task {
+                await viewModel.didTapAnalyzeButton()
+            }
+        default:
+            return
+        }
     }
 }
 
