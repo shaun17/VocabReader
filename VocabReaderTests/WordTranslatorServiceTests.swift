@@ -93,10 +93,10 @@ final class WordTranslatorServiceTests: XCTestCase {
         XCTAssertEqual(object["max_tokens"] as? Int, 240)
     }
 
-    func testAnalyzeParagraphReturnsAnalysisContent() async throws {
+    func testAnalyzeParagraphReturnsStructuredAnalysisContent() async throws {
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "这里的 would 用来让请求更委婉。"}}]
+          "choices": [{"message": {"role": "assistant", "content": "{\\"points\\":[{\\"category\\":\\"语法结构\\",\\"quote\\":\\"Would you mind\\",\\"explanation\\":\\"用疑问句包装请求，语气更委婉。\\",\\"usage\\":\\"向别人提要求时，可用 Would you mind + doing。\\"},{\\"category\\":\\"表达/俚语\\",\\"quote\\":\\"opening the window\\",\\"explanation\\":\\"动名词跟在 mind 后，动作表达自然。\\",\\"usage\\":\\"mind 后接动名词，不接 to do。\\"}]}"} }]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) { _ in }
@@ -109,14 +109,79 @@ final class WordTranslatorServiceTests: XCTestCase {
 
         let analysis = try await service.analyze(paragraph: "Would you mind opening the window?")
 
-        XCTAssertEqual(analysis, "这里的 would 用来让请求更委婉。")
+        XCTAssertEqual(
+            analysis,
+            """
+            语法结构
+            • 原文：Would you mind
+              作用：用疑问句包装请求，语气更委婉。
+              用法：向别人提要求时，可用 Would you mind + doing。
+
+            表达与俚语
+            • 原文：opening the window
+              作用：动名词跟在 mind 后，动作表达自然。
+              用法：mind 后接动名词，不接 to do。
+            """
+        )
+    }
+
+    func testAnalyzeParagraphNormalizesUnstructuredFallbackContent() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "1. 这里的 would 用来让请求更委婉。\\n2) mind 后面接动名词 opening。"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) { _ in }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.example.com/v1",
+            model: "moonshot-v1-8k"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        let analysis = try await service.analyze(paragraph: "Would you mind opening the window?")
+
+        XCTAssertEqual(
+            analysis,
+            """
+            语言观察
+            • 这里的 would 用来让请求更委婉。
+            • mind 后面接动名词 opening。
+            """
+        )
+    }
+
+    func testAnalyzeParagraphKeepsStructuredLayoutWhenModelOmitsUsage() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "{\\"points\\":[{\\"category\\":\\"语气逻辑\\",\\"quote\\":\\"I guess\\",\\"explanation\\":\\"用 guess 降低语气强度，让表达听起来不那么绝对。\\"}]}"} }]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) { _ in }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.example.com/v1",
+            model: "moonshot-v1-8k"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        let analysis = try await service.analyze(paragraph: "I guess we could try again.")
+
+        XCTAssertEqual(
+            analysis,
+            """
+            语气与逻辑
+            • 原文：I guess
+              作用：用 guess 降低语气强度，让表达听起来不那么绝对。
+            """
+        )
     }
 
     func testAnalyzeParagraphBuildsPromptForGrammarIdiomsAndSlangWithoutTranslation() async throws {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "解析"}}]
+          "choices": [{"message": {"role": "assistant", "content": "{\\"points\\":[{\\"category\\":\\"语法结构\\",\\"quote\\":\\"Would you mind\\",\\"explanation\\":\\"用疑问句包装请求，语气更委婉。\\",\\"usage\\":\\"向别人提要求时，可用 Would you mind + doing。\\"}]}"}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -139,6 +204,12 @@ final class WordTranslatorServiceTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Would you mind opening the window?"))
         XCTAssertTrue(prompt.contains("grammar patterns, idioms, slang, implied tone"))
         XCTAssertTrue(prompt.contains("Do not translate the whole paragraph"))
-        XCTAssertEqual(object["max_tokens"] as? Int, 320)
+        XCTAssertTrue(prompt.contains("Return valid JSON only"))
+        XCTAssertTrue(prompt.contains("\"category\""))
+        XCTAssertTrue(prompt.contains("\"quote\""))
+        XCTAssertTrue(prompt.contains("\"explanation\""))
+        XCTAssertTrue(prompt.contains("\"usage\""))
+        XCTAssertTrue(prompt.contains("Do not use Markdown, numbering, or code fences"))
+        XCTAssertEqual(object["max_tokens"] as? Int, 520)
     }
 }

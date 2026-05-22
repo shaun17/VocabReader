@@ -98,6 +98,72 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://apple", "word://apple"])
     }
 
+    func testArticleContentFormatterHighlightsInflectedTargetWordForms() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "The manager was concerned about recurring concerns.",
+            targetWords: [
+                VocabWord(id: "1", spelling: "concern"),
+                VocabWord(id: "2", spelling: "recur")
+            ]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(String(formatted.characters), article.content)
+        XCTAssertEqual(
+            linkedRuns.map(\.absoluteString),
+            ["word://concern", "word://recur", "word://concern"]
+        )
+    }
+
+    func testArticleContentFormatterHighlightsRegularFormsWhenFinalConsonantDoesNotDouble() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "The store opened before the opening meeting.",
+            targetWords: [VocabWord(id: "1", spelling: "open")]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(String(formatted.characters), article.content)
+        XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://open", "word://open"])
+    }
+
+    func testArticleContentFormatterHighlightsBaseFormWhenTargetWordIsInflected() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "One concern returned after the meeting.",
+            targetWords: [VocabWord(id: "1", spelling: "concerns")]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(String(formatted.characters), article.content)
+        XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://concerns"])
+    }
+
+    func testArticleContentFormatterDoesNotTreatLexicalSEndingsAsPluralForms() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "A new report discussed the news.",
+            targetWords: [VocabWord(id: "1", spelling: "news")]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(String(formatted.characters), article.content)
+        XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://news"])
+    }
+
     func testArticleContentFormatterKeepsParagraphActionsOutOfSelectableText() {
         let formatted = ArticleContentFormatter().formatParagraph(
             content: "A calm river moved slowly.",
