@@ -159,7 +159,7 @@ private extension WordTranslatorService {
         return body.isEmpty ? "语言观察\n• 暂无可展示的解析。" : "语言观察\n\(body)"
     }
 
-    /// 输出单条解析时固定“原文、作用、用法”三个字段，避免自由文本散乱。
+    /// 输出单条解析时固定“原文、作用、记忆”三个字段，避免自由文本散乱。
     static func formattedPoint(_ point: ParagraphAnalysisPoint) -> String {
         let quote = sanitizedDisplayText(point.quote)
         let explanation = sanitizedDisplayText(point.explanation)
@@ -173,7 +173,7 @@ private extension WordTranslatorService {
             lines.append("  作用：\(explanation)")
         }
         if !usage.isEmpty {
-            lines.append("  用法：\(usage)")
+            lines.append("  记忆：\(usage)")
         }
 
         return lines.isEmpty ? "• 暂无可展示的解析。" : lines.joined(separator: "\n")
@@ -246,7 +246,7 @@ private enum ParagraphAnalysisCategory: CaseIterable {
 private struct ParagraphAnalysisPayload: Decodable {
     let points: [ParagraphAnalysisPoint]
 
-    /// 兼容模型返回裸 JSON 或 ```json 代码块两种常见形态。
+    /// 兼容模型返回裸 JSON、代码块、前缀标题，以及外层 JSON 被截断但条目完整的常见形态。
     static func decode(from rawAnalysis: String) -> ParagraphAnalysisPayload? {
         let cleaned = rawAnalysis
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -254,8 +254,69 @@ private struct ParagraphAnalysisPayload: Decodable {
             .replacingOccurrences(of: #"\s*```$"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let data = cleaned.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(ParagraphAnalysisPayload.self, from: data)
+        for candidate in strictPayloadCandidates(from: cleaned) {
+            guard let data = candidate.data(using: .utf8),
+                  let payload = try? JSONDecoder().decode(ParagraphAnalysisPayload.self, from: data) else {
+                continue
+            }
+            return payload
+        }
+
+        let points = loosePointCandidates(from: cleaned)
+            .compactMap { candidate -> ParagraphAnalysisPoint? in
+                guard let data = candidate.data(using: .utf8),
+                      let point = try? JSONDecoder().decode(ParagraphAnalysisPoint.self, from: data),
+                      point.hasDisplayableContent else {
+                    return nil
+                }
+                return point
+            }
+
+        return points.isEmpty ? nil : ParagraphAnalysisPayload(points: points)
+    }
+
+    /// 提供完整 JSON 的候选范围；模型有时会在 JSON 前后额外写标题。
+    private static func strictPayloadCandidates(from text: String) -> [String] {
+        var candidates = [text]
+        if let firstBrace = text.firstIndex(of: "{"),
+           let lastBrace = text.lastIndex(of: "}"),
+           firstBrace <= lastBrace {
+            candidates.append(String(text[firstBrace...lastBrace]))
+        }
+        return candidates
+    }
+
+    /// 从不完整 JSON 文本里提取已闭合的对象片段，尽量保住已经生成完整的解析条目。
+    private static func loosePointCandidates(from text: String) -> [String] {
+        var candidates: [String] = []
+        var objectStartStack: [String.Index] = []
+        var index = text.startIndex
+        var isInsideString = false
+        var isEscaped = false
+
+        while index < text.endIndex {
+            let character = text[index]
+
+            if isInsideString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInsideString = false
+                }
+            } else if character == "\"" {
+                isInsideString = true
+            } else if character == "{" {
+                objectStartStack.append(index)
+            } else if character == "}", let startIndex = objectStartStack.popLast() {
+                candidates.append(String(text[startIndex...index]))
+            }
+
+            index = text.index(after: index)
+        }
+
+        return candidates
     }
 }
 
@@ -279,5 +340,12 @@ private struct ParagraphAnalysisPoint: Decodable {
         quote = try container.decodeIfPresent(String.self, forKey: .quote) ?? ""
         explanation = try container.decodeIfPresent(String.self, forKey: .explanation) ?? ""
         usage = try container.decodeIfPresent(String.self, forKey: .usage) ?? ""
+    }
+
+    /// 判断条目是否足够展示，避免把空对象或外层 payload 当成解析内容。
+    var hasDisplayableContent: Bool {
+        !quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !explanation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !usage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

@@ -115,12 +115,12 @@ final class WordTranslatorServiceTests: XCTestCase {
             语法结构
             • 原文：Would you mind
               作用：用疑问句包装请求，语气更委婉。
-              用法：向别人提要求时，可用 Would you mind + doing。
+              记忆：向别人提要求时，可用 Would you mind + doing。
 
             表达与俚语
             • 原文：opening the window
               作用：动名词跟在 mind 后，动作表达自然。
-              用法：mind 后接动名词，不接 to do。
+              记忆：mind 后接动名词，不接 to do。
             """
         )
     }
@@ -177,6 +177,62 @@ final class WordTranslatorServiceTests: XCTestCase {
         )
     }
 
+    func testAnalyzeParagraphExtractsStructuredPointsWhenModelWrapsJsonWithHeading() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "语言观察\\n{\\"points\\":[{\\"category\\":\\"语法结构\\",\\"quote\\":\\"the root cause is a system glitch, not handwriting\\",\\"explanation\\":\\"使用 is A, not B 结构纠正错误假设，强调真正原因。\\",\\"usage\\":\\"指出原因时可用 The reason is X, not Y。\\"}]}"} }]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) { _ in }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.example.com/v1",
+            model: "moonshot-v1-8k"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        let analysis = try await service.analyze(paragraph: "The root cause is a system glitch, not handwriting.")
+
+        XCTAssertEqual(
+            analysis,
+            """
+            语法结构
+            • 原文：the root cause is a system glitch, not handwriting
+              作用：使用 is A, not B 结构纠正错误假设，强调真正原因。
+              记忆：指出原因时可用 The reason is X, not Y。
+            """
+        )
+    }
+
+    func testAnalyzeParagraphExtractsCompletePointsFromIncompleteJsonResponse() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "{\\n  \\"points\\": [\\n    {\\n      \\"category\\": \\"表达/俚语\\",\\n      \\"quote\\": \\"no scrawling this time\\",\\n      \\"explanation\\": \\"用 no + 动名词轻松提醒自己不要重复坏习惯。\\",\\n      \\"usage\\": \\"可用 no rushing this time 表示这次别再赶。\\"\\n    },\\n    {\\n      \\"category\\": \\"语气逻辑\\",\\n      \\"quote\\": \\"Should we escala"} }]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) { _ in }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.example.com/v1",
+            model: "moonshot-v1-8k"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        let analysis = try await service.analyze(paragraph: "No scrawling this time.")
+
+        XCTAssertEqual(
+            analysis,
+            """
+            表达与俚语
+            • 原文：no scrawling this time
+              作用：用 no + 动名词轻松提醒自己不要重复坏习惯。
+              记忆：可用 no rushing this time 表示这次别再赶。
+            """
+        )
+        XCTAssertFalse(analysis.contains("\"points\""))
+        XCTAssertFalse(analysis.contains("{"))
+    }
+
     func testAnalyzeParagraphBuildsPromptForGrammarIdiomsAndSlangWithoutTranslation() async throws {
         var capturedRequest: URLRequest?
         let json = """
@@ -210,6 +266,6 @@ final class WordTranslatorServiceTests: XCTestCase {
         XCTAssertTrue(prompt.contains("\"explanation\""))
         XCTAssertTrue(prompt.contains("\"usage\""))
         XCTAssertTrue(prompt.contains("Do not use Markdown, numbering, or code fences"))
-        XCTAssertEqual(object["max_tokens"] as? Int, 520)
+        XCTAssertEqual(object["max_tokens"] as? Int, 900)
     }
 }
