@@ -190,6 +190,67 @@ final class ArticleGeneratorTests: XCTestCase {
         )
     }
 
+    func testPagingSessionAddsReadableTitleWhenComposedFragmentsHaveNoTitle() async throws {
+        let mockLLM = MockLLMService { words, scene, topic in
+            if words.count > 2 {
+                throw LLMError.missingVocabularyWords(words.map(\.spelling))
+            }
+
+            return Article(
+                id: UUID(),
+                scene: scene,
+                topic: topic,
+                content: words.map(\.spelling).joined(separator: " "),
+                targetWords: words
+            )
+        }
+        let words = (1...4).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(
+            maiMemo: mockMaiMemo,
+            llm: mockLLM,
+            batchSize: 4,
+            scenes: [.dialogue],
+            topic: .customer
+        )
+        let session = generator.makePagingSession()
+
+        let article = try await session.loadNextArticle()
+
+        XCTAssertEqual(article?.title, "客户对话")
+    }
+
+    func testPagingSessionKeepsFirstGeneratedTitleWhenComposingArticle() async throws {
+        let mockLLM = MockLLMService { words, scene, topic in
+            if words.count > 2 {
+                throw LLMError.missingVocabularyWords(words.map(\.spelling))
+            }
+
+            return Article(
+                id: UUID(),
+                scene: scene,
+                topic: topic,
+                title: words.first?.spelling == "word1" ? "A Customer Reset" : "A Later Fragment",
+                content: words.map(\.spelling).joined(separator: " "),
+                targetWords: words
+            )
+        }
+        let words = (1...4).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(
+            maiMemo: mockMaiMemo,
+            llm: mockLLM,
+            batchSize: 4,
+            scenes: [.dialogue],
+            topic: .customer
+        )
+        let session = generator.makePagingSession()
+
+        let article = try await session.loadNextArticle()
+
+        XCTAssertEqual(article?.title, "A Customer Reset")
+    }
+
     func testPagingSessionComposesSingleArticleAfterTimeoutFailure() async throws {
         let collector = BatchCollector()
         let mockLLM = MockLLMService { words, scene, topic in

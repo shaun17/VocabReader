@@ -247,14 +247,28 @@ private final class PagingSession: TodayArticlePagingSession {
             currentLocation += (block as NSString).length
         }
 
+        let title = composedTitle(from: articles, scene: scene, topic: topic)
         return Article(
             id: UUID(),
             scene: scene,
             topic: topic,
+            title: title,
             content: content,
             targetWords: targetWords,
             vocabularyOccurrences: occurrences
         )
+    }
+
+    /// 为内部合成文章选择标题：优先保留模型标题，缺失时用主题和体裁生成可展示标题。
+    private func composedTitle(from articles: [Article], scene: ArticleScene, topic: ArticleTopic) -> String {
+        if let generatedTitle = articles
+            .map(\.title)
+            .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }) {
+            return generatedTitle
+        }
+
+        return topic == .general ? scene.rawValue : "\(topic.rawValue)\(scene.rawValue)"
     }
 
     /// 只保留落在片段正文里的命中项，避免被裁掉的首尾空白影响高亮位置。
