@@ -22,6 +22,37 @@ final class TodayViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.error)
     }
 
+    func testCoveredWordCountSumsGeneratedArticleTargets() async {
+        let firstArticle = Article(
+            id: UUID(),
+            scene: .dialogue,
+            content: "first",
+            targetWords: [
+                VocabWord(id: "1", spelling: "pistol"),
+                VocabWord(id: "2", spelling: "humble"),
+                VocabWord(id: "3", spelling: "chop")
+            ]
+        )
+        let secondArticle = Article(
+            id: UUID(),
+            scene: .science,
+            content: "second",
+            targetWords: [
+                VocabWord(id: "4", spelling: "keen"),
+                VocabWord(id: "5", spelling: "remedy"),
+                VocabWord(id: "6", spelling: "petrol"),
+                VocabWord(id: "7", spelling: "recourse")
+            ]
+        )
+        let viewModel = TodayViewModel {
+            MockTodayArticleGenerator(articles: [firstArticle, secondArticle])
+        }
+
+        await viewModel.loadArticles()
+
+        XCTAssertEqual(viewModel.coveredWordCount, 7)
+    }
+
     func testLoadMoreRequiresListInteraction() async {
         let articles = (1...5).map { i in
             Article(

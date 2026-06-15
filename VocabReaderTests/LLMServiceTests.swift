@@ -6,7 +6,7 @@ final class LLMServiceTests: XCTestCase {
     func testGenerateArticleReturnsContent() async throws {
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "Ephemeral Ideas\\n\\nEphemeral ideas became ubiquitous in the town."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Ephemeral Ideas\\n\\n<vocab id=\\"1\\">Ephemeral</vocab> ideas became <vocab id=\\"2\\">ubiquitous</vocab> in the town."}}]
         }
         """
         let session = MockURLSession(data: Data(json.utf8), statusCode: 200)
@@ -49,7 +49,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "Serendipity made the plan work."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Lucky Plan\\n\\n<vocab id=\\"1\\">Serendipity</vocab> made the plan work."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -70,7 +70,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "Customer Concerns\\n\\nThe customer raised several concerns during the meeting."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Customer Concerns\\n\\nThe customer raised several <vocab id=\\"1\\">concerns</vocab> during the meeting."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -101,7 +101,9 @@ final class LLMServiceTests: XCTestCase {
         let vocabulary = spellings.enumerated().map { index, spelling in
             VocabWord(id: "\(index)", spelling: spelling)
         }
-        let articleBody = vocabulary.map(\.spelling).joined(separator: " ")
+        let articleBody = vocabulary
+            .map { "<vocab id=\\\"\($0.id)\\\">\($0.spelling)</vocab>" }
+            .joined(separator: " ")
         let json = """
         {
           "choices": [{"message": {"role": "assistant", "content": "Practice Scene\\n\\n\(articleBody)"}}]
@@ -125,12 +127,12 @@ final class LLMServiceTests: XCTestCase {
     func testGenerateArticleRetriesWhenResponseMissesRequiredWords() async throws {
         let firstJSON = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\nThe apple stayed on the desk."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\nThe <vocab id=\\"1\\">apple</vocab> stayed on the desk."}}]
         }
         """
         let secondJSON = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "Complete Draft\\n\\nThe apple stayed beside the river."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Complete Draft\\n\\nThe <vocab id=\\"1\\">apple</vocab> stayed beside the <vocab id=\\"2\\">river</vocab>."}}]
         }
         """
         let session = QueueingMockSession(responses: [
@@ -160,7 +162,7 @@ final class LLMServiceTests: XCTestCase {
     func testGenerateArticleAcceptsInflectedTargetWordForms() async throws {
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "Customer Concerns\\n\\nThe customer raised several concerns during the meeting."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Customer Concerns\\n\\nThe customer raised several <vocab id=\\"1\\">concerns</vocab> during the meeting."}}]
         }
         """
         let session = QueueingMockSession(responses: [(Data(json.utf8), 200)])
@@ -177,11 +179,191 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertEqual(session.requests.count, 1)
     }
 
-    func testGenerateArticleConfiguresRequestTimeout() async throws {
+    func testGenerateArticleFallsBackToLocalCoverageWhenVocabularyMarkersAreMissing() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Kitchen Draft\\n\\nThe humble cook chopped onions beside the river."}}]
+        }
+        """
+        let responses = Array(repeating: (Data(json.utf8), 200), count: 3)
+        let session = QueueingMockSession(responses: responses)
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [
+                VocabWord(id: "1", spelling: "humble"),
+                VocabWord(id: "2", spelling: "chop"),
+                VocabWord(id: "3", spelling: "river")
+            ],
+            scene: .novel,
+            topic: .general
+        )
+
+        XCTAssertEqual(article.content, "The humble cook chopped onions beside the river.")
+        XCTAssertEqual(article.vocabularyOccurrences.map(\.surfaceText), ["humble", "chopped", "river"])
+        XCTAssertEqual(article.vocabularyOccurrences.map(\.word.spelling), ["humble", "chop", "river"])
+        XCTAssertEqual(session.requests.count, 1)
+    }
+
+    func testGenerateArticleTreatsDialogueOpeningLineAsBodyWhenTitleIsMissing() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "A: Your handling felt like a <vocab id=\\"1\\">pistol</vocab> -- too quick to draw conclusions.\\nB: I should have been more <vocab id=\\"2\\">humble</vocab> and listened first.\\nA: We had to <vocab id=\\"3\\">chop</vocab> the original plan after the customer's pushback."}}]
+        }
+        """
+        let responses = Array(repeating: (Data(json.utf8), 200), count: 3)
+        let session = QueueingMockSession(responses: responses)
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [
+                VocabWord(id: "1", spelling: "pistol"),
+                VocabWord(id: "2", spelling: "humble"),
+                VocabWord(id: "3", spelling: "chop")
+            ],
+            scene: .dialogue,
+            topic: .customer
+        )
+
+        XCTAssertEqual(article.title, "")
+        XCTAssertFalse(article.content.contains("<vocab"))
+        XCTAssertTrue(article.content.hasPrefix("A: Your handling felt like a pistol"))
+        XCTAssertEqual(article.vocabularyOccurrences.map(\.surfaceText), ["pistol", "humble", "chop"])
+        XCTAssertEqual(session.requests.count, 1)
+    }
+
+    func testGenerateArticleStripsVocabularyMarkersFromTitleWithoutCountingTitleCoverage() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "The <vocab id=\\"1\\">pistol</vocab> Review\\n\\nThe client described the decision as a <vocab id=\\"1\\">pistol</vocab> pointed at the schedule."}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [(Data(json.utf8), 200)])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: "1", spelling: "pistol")],
+            scene: .novel,
+            topic: .customer
+        )
+
+        XCTAssertEqual(article.title, "The pistol Review")
+        XCTAssertEqual(article.content, "The client described the decision as a pistol pointed at the schedule.")
+        XCTAssertEqual(article.vocabularyOccurrences.map(\.surfaceText), ["pistol"])
+        XCTAssertEqual(article.vocabularyOccurrences.first?.range, NSRange(location: 39, length: 6))
+    }
+
+    func testGenerateArticleFallsBackToExactPhraseCoverageWhenVocabularyMarkerIsMissing() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Flight Draft\\n\\nThe plane will take off after sunrise."}}]
+        }
+        """
+        let responses = Array(repeating: (Data(json.utf8), 200), count: 3)
+        let session = QueueingMockSession(responses: responses)
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: "phrase-1", spelling: "take off")],
+            scene: .novel,
+            topic: .general
+        )
+
+        XCTAssertEqual(article.content, "The plane will take off after sunrise.")
+        XCTAssertEqual(article.vocabularyOccurrences.map(\.surfaceText), ["take off"])
+        XCTAssertEqual(article.vocabularyOccurrences.first?.word.spelling, "take off")
+        XCTAssertEqual(session.requests.count, 1)
+    }
+
+    func testGenerateArticleUsesVocabularyMarkersForPhraseTargets() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Flight Practice\\n\\nThe plane <vocab id=\\"phrase-1\\">took off</vocab> after sunrise."}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [(Data(json.utf8), 200)])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: "phrase-1", spelling: "take off")],
+            scene: .novel,
+            topic: .general
+        )
+
+        XCTAssertEqual(article.content, "The plane took off after sunrise.")
+        XCTAssertEqual(article.vocabularyOccurrences.count, 1)
+        XCTAssertEqual(article.vocabularyOccurrences.first?.word.spelling, "take off")
+        XCTAssertEqual(article.vocabularyOccurrences.first?.surfaceText, "took off")
+        XCTAssertEqual(article.vocabularyOccurrences.first?.range, NSRange(location: 10, length: 8))
+    }
+
+    func testGenerateArticleRetriesWhenVocabularyMarkerMissesPhraseTarget() async throws {
+        let firstJSON = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\nThe plane took off after sunrise."}}]
+        }
+        """
+        let secondJSON = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Fixed Draft\\n\\nThe plane <vocab id=\\"phrase-1\\">took off</vocab> after sunrise."}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [
+            (Data(firstJSON.utf8), 200),
+            (Data(secondJSON.utf8), 200)
+        ])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: "phrase-1", spelling: "take off")],
+            scene: .novel,
+            topic: .general
+        )
+
+        XCTAssertEqual(article.title, "Fixed Draft")
+        XCTAssertEqual(article.content, "The plane took off after sunrise.")
+        XCTAssertEqual(session.requests.count, 2)
+
+        let secondBody = try XCTUnwrap(session.requests.last?.httpBody)
+        let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondBody) as? [String: Any])
+        let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
+        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        XCTAssertTrue(retryPrompt.contains("Missing vocabulary words from the previous draft: take off"))
+    }
+
+    func testGenerateArticleStopsAfterOneMissingAttemptForLargeBatches() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\nThis draft does not contain the requested vocabulary."}}]
+        }
+        """
+        let responses = Array(repeating: (Data(json.utf8), 200), count: 3)
+        let session = QueueingMockSession(responses: responses)
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+        let words = (1...6).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+
+        do {
+            _ = try await service.generateArticle(words: words, scene: .novel, topic: .general)
+            XCTFail("大批次缺词时应尽快抛出，让 ArticleGenerator 拆分批次")
+        } catch LLMError.missingVocabularyWords(let missingWords) {
+            XCTAssertEqual(missingWords, words.map(\.spelling))
+        }
+
+        XCTAssertEqual(session.requests.count, 1)
+    }
+
+    func testGenerateArticleCapsRequestTimeoutForInteractiveGeneration() async throws {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "The apple stayed fresh."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Fresh Fruit\\n\\nThe <vocab id=\\"1\\">apple</vocab> stayed fresh."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -197,14 +379,14 @@ final class LLMServiceTests: XCTestCase {
         _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .novel, topic: .general)
 
         let timeoutInterval = try XCTUnwrap(capturedRequest?.timeoutInterval)
-        XCTAssertEqual(timeoutInterval, 180, accuracy: 0.1)
+        XCTAssertEqual(timeoutInterval, 45, accuracy: 0.1)
     }
 
     func testGenerateArticleRequestsDisabledThinkingAndBoundedOutput() async throws {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "The apple stayed fresh."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Fresh Fruit\\n\\nThe <vocab id=\\"1\\">apple</vocab> stayed fresh."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -226,11 +408,36 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertEqual(object["max_tokens"] as? Int, 900)
     }
 
+    func testConnectionAllowsEnoughOutputTokensForReasoningModels() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "OK", "reasoning_content": "The user asked for an OK response."}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-pro"
+        )
+        let service = LLMService(config: config, session: session)
+
+        try await service.testConnection()
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let maxTokens = try XCTUnwrap(object["max_tokens"] as? Int)
+        XCTAssertGreaterThanOrEqual(maxTokens, 64)
+    }
+
     func testDialoguePromptRequiresSpeakerFormatting() async throws {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "A: I brought an apple."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Shared Snack\\n\\nA: I brought an <vocab id=\\"1\\">apple</vocab>."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -251,7 +458,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "A: Thank you for the feedback."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Team Talk\\n\\nA: Thank you for the <vocab id=\\"1\\">feedback</vocab>."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -274,7 +481,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "The apple rolled across the table."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Rolling Fruit\\n\\nThe <vocab id=\\"1\\">apple</vocab> rolled across the table."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -296,7 +503,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "The clinic opened early."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Morning Care\\n\\nThe <vocab id=\\"1\\">clinic</vocab> opened early."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -318,7 +525,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "The proposal needed clearer timing."}}]
+          "choices": [{"message": {"role": "assistant", "content": "Client Plan\\n\\nThe <vocab id=\\"1\\">proposal</vocab> needed clearer timing."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
@@ -339,7 +546,7 @@ final class LLMServiceTests: XCTestCase {
         var capturedRequest: URLRequest?
         let json = """
         {
-          "choices": [{"message": {"role": "assistant", "content": "A: The apple fell near the river."}}]
+          "choices": [{"message": {"role": "assistant", "content": "River Snack\\n\\nA: The <vocab id=\\"1\\">apple</vocab> fell near the <vocab id=\\"2\\">river</vocab>."}}]
         }
         """
         let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {

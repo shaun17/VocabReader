@@ -21,6 +21,7 @@
 		3C09EF6B4A5661E7A7D46F04 /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54F5653DC06B824E6459C9D3 /* BookmarkStore.swift */; };
 		3F7BEFBEDADCEA922BA72B70 /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94ED66C0F0A28E8AA7897EB5 /* LLMService.swift */; };
 		46243450696032F95CEA4D20 /* ArticleContentFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A964BA530B029EA157AB1895 /* ArticleContentFormatter.swift */; };
+		47D8C4DF0C8C40AC8AE91201 /* ArticleVocabularyMarkupParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D8C4DE0C8C40AC8AE91201 /* ArticleVocabularyMarkupParser.swift */; };
 		48E118247E47D69017186BDB /* ArticleAudioPlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6F83BCF06EB93C8C512062D /* ArticleAudioPlayerViewModel.swift */; };
 		491E1342453B5EDE127ED418 /* LLMServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC5EDAB16536B3B98C654B8 /* LLMServiceTests.swift */; };
 		50A0FE10798BDD522B43A48F /* SentenceExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A8CAAC4EAE2F88ECE2F0E /* SentenceExtractorTests.swift */; };
@@ -85,6 +86,7 @@
 		3B7CF7C13C62E35C8DB822C7 /* BookmarkedWordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkedWordTests.swift; sourceTree = "<group>"; };
 		3BDCC899222CE285D08267AB /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		45C27C4F167C495819C060DE /* WordDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDetailViewModel.swift; sourceTree = "<group>"; };
+		47D8C4DE0C8C40AC8AE91201 /* ArticleVocabularyMarkupParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleVocabularyMarkupParser.swift; sourceTree = "<group>"; };
 		4E3BF15991BBF4F61DCFAD7B /* WordTranslatorServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordTranslatorServiceTests.swift; sourceTree = "<group>"; };
 		4F0DE6EC868502C68C49A0BB /* ArticleCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleCardView.swift; sourceTree = "<group>"; };
 		51D08F2F145DA5E41D0E90A7 /* WordTranslatorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordTranslatorService.swift; sourceTree = "<group>"; };
@@ -190,6 +192,7 @@
 				A964BA530B029EA157AB1895 /* ArticleContentFormatter.swift */,
 				2A969EF4CF9F34DF79F0DBCE /* ArticleGenerator.swift */,
 				9ED003D2D18121638D154EF1 /* ArticleParagraphExtractor.swift */,
+				47D8C4DE0C8C40AC8AE91201 /* ArticleVocabularyMarkupParser.swift */,
 				54F5653DC06B824E6459C9D3 /* BookmarkStore.swift */,
 				321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */,
 				94ED66C0F0A28E8AA7897EB5 /* LLMService.swift */,
@@ -334,6 +337,7 @@
 				1921076B638B9904229A7854 /* ArticleGenerator.swift in Sources */,
 				92B93CCEE651897D214D56E0 /* ArticleParagraph.swift in Sources */,
 				732738859AD1CDF15BD4F224 /* ArticleParagraphExtractor.swift in Sources */,
+				47D8C4DF0C8C40AC8AE91201 /* ArticleVocabularyMarkupParser.swift in Sources */,
 				6E611A2EEDAD1B43B223D2EC /* ArticleParagraphTranslationViewModel.swift in Sources */,
 				C46B182DE4A9DEE980627B61 /* ArticlePlayerBar.swift in Sources */,
 				A18D9BF0E481B1B99FDEA59E /* ArticleReaderView.swift in Sources */,

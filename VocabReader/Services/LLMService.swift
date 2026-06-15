@@ -54,7 +54,10 @@ protocol LLMConnectionTesting {
 
 final class LLMService {
     private static let logger = Logger(subsystem: "com.vocabreader.app", category: "LLMService")
-    private static let articleGenerationMaxAttempts = 3
+    private static let smallBatchArticleGenerationMaxAttempts = 3
+    private static let largeBatchRetryWordLimit = 3
+    private static let articleRequestTimeout: TimeInterval = 45
+    private static let connectionTestMaxTokens = 64
 
     private let config: LLMConfig
     private let session: URLSessionProtocol
@@ -66,23 +69,33 @@ final class LLMService {
 
     /// 调用 LLM 生成文章，并同时注入体裁、主题和真实性约束。
     func generateArticle(words: [VocabWord], scene: ArticleScene, topic: ArticleTopic) async throws -> Article {
-        let wordList = words.map { $0.spelling }.joined(separator: ", ")
         var missingWords: [VocabWord] = []
+        let markupParser = ArticleVocabularyMarkupParser()
 
-        for _ in 1...Self.articleGenerationMaxAttempts {
+        for _ in 1...Self.articleGenerationMaxAttempts(for: words.count) {
             let prompt = buildArticlePrompt(
-                words: wordList,
+                words: words,
                 wordCount: words.count,
                 scene: scene,
                 topic: topic,
                 missingWords: missingWords
             )
             let content = try await requestArticleContent(prompt: prompt, wordCount: words.count)
-            let parsed = Self.parseTitleAndBody(from: content)
-            let currentMissingWords = TargetWordMatcher.missingWords(in: parsed.body, targetWords: words)
+            let parsed = Self.parseTitleAndBody(from: content, scene: scene)
+            let cleanTitle = markupParser.parse(content: parsed.title, targetWords: []).content
+            let markedBody = markupParser.parse(content: parsed.body, targetWords: words)
+            let currentMissingWords = markedBody.missingWords
 
             guard !currentMissingWords.isEmpty else {
-                return Article(id: UUID(), scene: scene, topic: topic, title: parsed.title, content: parsed.body, targetWords: words)
+                return Article(
+                    id: UUID(),
+                    scene: scene,
+                    topic: topic,
+                    title: cleanTitle,
+                    content: markedBody.content,
+                    targetWords: words,
+                    vocabularyOccurrences: markedBody.occurrences
+                )
             }
 
             missingWords = currentMissingWords
@@ -111,7 +124,7 @@ extension LLMService: LLMConnectionTesting {
 
         var body: [String: Any] = [
             "model": config.model,
-            "max_tokens": 8,
+            "max_tokens": Self.connectionTestMaxTokens,
             "messages": [
                 ["role": "user", "content": "Reply with OK."]
             ]
@@ -145,7 +158,7 @@ private extension LLMService {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = config.requestTimeout
+        request.timeoutInterval = min(config.requestTimeout, Self.articleRequestTimeout)
         request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -171,7 +184,7 @@ private extension LLMService {
         } catch let error as URLError where error.code == .timedOut {
             let elapsed = Date().timeIntervalSince(startedAt)
             Self.logger.error("LLM request timed out after \(elapsed, privacy: .public)s")
-            throw LLMError.requestTimedOut(config.requestTimeout)
+            throw LLMError.requestTimedOut(request.timeoutInterval)
         } catch {
             Self.logger.error("LLM request failed: \(error.localizedDescription, privacy: .public)")
             throw error
@@ -196,7 +209,7 @@ private extension LLMService {
 
     /// 拼装文章生成 Prompt，统一管理体裁、主题和真实性约束。
     func buildArticlePrompt(
-        words wordList: String,
+        words: [VocabWord],
         wordCount: Int,
         scene: ArticleScene,
         topic: ArticleTopic,
@@ -204,9 +217,12 @@ private extension LLMService {
     ) -> String {
         """
         Write \(scene.promptDescription) about \(topic.promptDescription) that naturally incorporates \
-        ALL of these English vocabulary words: \(wordList). \
+        ALL of these English vocabulary items: \(targetVocabularyInstruction(for: words)). \
         Each target vocabulary item must appear in the article as its original spelling or a natural inflected form in the same word family. \
         The article as a whole must include ALL of the listed vocabulary words. \
+        In the article body, wrap the exact visible words that cover each target item with <vocab id="TARGET_ID">actual words in the article</vocab>. \
+        Use each TARGET_ID exactly as listed, and mark every target item at least once in the body. \
+        Do not put <vocab> tags in the title. \
         \(articleLengthInstruction(for: wordCount)) \
         Spread the vocabulary across the whole article. Do not turn the article into a vocabulary checklist, a word dump, or one sentence that only exists to mention words. \
         Give each target word enough sentence context for a learner to understand how it is used in real communication. \
@@ -216,8 +232,20 @@ private extension LLMService {
         Grammar, punctuation, and word usage must be accurate and natural. \
         The writing should flow naturally. Do not bold, mark, or explain the words separately. \
         \(missingVocabularyInstruction(for: missingWords)) \
-        Output the title on the first line, then a blank line, then the article text. No extra commentary.
+        Output the title on the first line, then a blank line, then the tagged article body. No extra commentary.
         """
+    }
+
+    /// 大批次缺词时优先交给 ArticleGenerator 拆分，不在同一大批次上重复消耗多次请求。
+    static func articleGenerationMaxAttempts(for wordCount: Int) -> Int {
+        wordCount > largeBatchRetryWordLimit ? 1 : smallBatchArticleGenerationMaxAttempts
+    }
+
+    /// 给模型同时提供词条 ID 和词面，便于返回可校验的内联标记。
+    func targetVocabularyInstruction(for words: [VocabWord]) -> String {
+        words
+            .map { "id=\($0.id), word=\($0.spelling)" }
+            .joined(separator: "; ")
     }
 
     /// 按目标词数量给模型明确篇幅，避免词多时生成一两句硬塞词的短文。
@@ -250,14 +278,44 @@ private extension LLMService {
 
 private extension LLMService {
     /// 将 LLM 返回文本拆分为标题（第一行）和正文（剩余部分）。
-    static func parseTitleAndBody(from raw: String) -> (title: String, body: String) {
+    static func parseTitleAndBody(from raw: String, scene: ArticleScene) -> (title: String, body: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let firstNewline = trimmed.firstIndex(of: "\n") else {
             return ("", trimmed)
         }
-        let title = String(trimmed[..<firstNewline]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let titleCandidate = String(trimmed[..<firstNewline]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if treatsOpeningLineAsBody(titleCandidate, scene: scene) {
+            return ("", trimmed)
+        }
+
+        let title = normalizedTitle(titleCandidate)
         let body = String(trimmed[firstNewline...]).trimmingCharacters(in: .whitespacesAndNewlines)
         return (title, body)
+    }
+
+    /// DeepSeek 偶尔不返回标题，直接从对话正文开头；这时不能把首句当标题丢出正文校验。
+    static func treatsOpeningLineAsBody(_ line: String, scene: ArticleScene) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard scene == .dialogue else { return false }
+        return trimmed.range(of: #"^[A-Z]\s*[:：]"#, options: .regularExpression) != nil
+    }
+
+    /// 兼容模型返回 "Title: ..." 这类标题前缀，避免 UI 上直接显示协议字段名。
+    static func normalizedTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let patterns = [
+            #"(?i)^title\s*[:：]\s*"#,
+            #"^标题\s*[:：]\s*"#
+        ]
+
+        return patterns.reduce(trimmed) { current, pattern in
+            current.replacingOccurrences(
+                of: pattern,
+                with: "",
+                options: .regularExpression
+            )
+        }
+        .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

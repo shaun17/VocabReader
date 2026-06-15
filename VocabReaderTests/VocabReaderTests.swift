@@ -80,6 +80,19 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertEqual(linkedRuns.first?.absoluteString, "word://river")
     }
 
+    func testArticleVocabularyMarkupParserRemovesUnclosedVocabularyTag() {
+        let word = VocabWord(id: "1", spelling: "delay")
+        let parsed = ArticleVocabularyMarkupParser().parse(
+            content: "We can proceed without <vocab id=\"1\">delay today.",
+            targetWords: [word]
+        )
+
+        XCTAssertEqual(parsed.content, "We can proceed without delay today.")
+        XCTAssertFalse(parsed.content.contains("<vocab"))
+        XCTAssertEqual(parsed.occurrences.map(\.surfaceText), ["delay"])
+        XCTAssertTrue(parsed.missingWords.isEmpty)
+    }
+
     func testArticleContentFormatterHandlesDuplicateTargetWordSpellings() {
         let article = Article(
             id: UUID(),
@@ -162,6 +175,50 @@ final class VocabReaderTests: XCTestCase {
 
         XCTAssertEqual(String(formatted.characters), article.content)
         XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://news"])
+    }
+
+    func testArticleContentFormatterHighlightsMarkedPhraseOccurrence() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "The plane took off after sunrise.",
+            targetWords: [VocabWord(id: "phrase-1", spelling: "take off")],
+            vocabularyOccurrences: [
+                ArticleVocabularyOccurrence(
+                    word: VocabWord(id: "phrase-1", spelling: "take off"),
+                    surfaceText: "took off",
+                    range: NSRange(location: 10, length: 8)
+                )
+            ]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(String(formatted.characters), article.content)
+        XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://take%20off"])
+    }
+
+    func testArticleParagraphExtractorCarriesMarkedOccurrencesIntoParagraphs() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "The plane took off after sunrise.\n\nThe river was quiet.",
+            targetWords: [VocabWord(id: "phrase-1", spelling: "take off")],
+            vocabularyOccurrences: [
+                ArticleVocabularyOccurrence(
+                    word: VocabWord(id: "phrase-1", spelling: "take off"),
+                    surfaceText: "took off",
+                    range: NSRange(location: 10, length: 8)
+                )
+            ]
+        )
+
+        let paragraphs = ArticleParagraphExtractor().extract(from: article)
+
+        XCTAssertEqual(paragraphs.first?.vocabularyOccurrences.count, 1)
+        XCTAssertEqual(paragraphs.first?.vocabularyOccurrences.first?.range, NSRange(location: 10, length: 8))
+        XCTAssertTrue(paragraphs.dropFirst().allSatisfy { $0.vocabularyOccurrences.isEmpty })
     }
 
     func testArticleContentFormatterKeepsParagraphActionsOutOfSelectableText() {

@@ -56,7 +56,7 @@ struct SettingsView: View {
 
                     SettingsRow {
                         EditableStepper(
-                            title: "每篇词汇",
+                            title: "每篇目标词汇",
                             value: $draft.wordsPerArticle,
                             range: ArticleGenerationLimits.wordsPerArticleRange,
                             step: ArticleGenerationLimits.wordsPerArticleStep

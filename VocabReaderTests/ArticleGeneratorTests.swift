@@ -151,6 +151,84 @@ final class ArticleGeneratorTests: XCTestCase {
         )
     }
 
+    func testPagingSessionComposesSingleArticleAfterMissingVocabularyFailure() async throws {
+        let collector = BatchCollector()
+        let mockLLM = MockLLMService { words, scene, topic in
+            await collector.append(words)
+            if words.count > 3 {
+                throw LLMError.missingVocabularyWords(words.map(\.spelling))
+            }
+
+            return Article(
+                id: UUID(),
+                scene: scene,
+                topic: topic,
+                content: words.map(\.spelling).joined(separator: " "),
+                targetWords: words
+            )
+        }
+        let words = (1...6).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, batchSize: 6)
+        let session = generator.makePagingSession()
+
+        let firstArticle = try await session.loadNextArticle()
+        let secondArticle = try await session.loadNextArticle()
+
+        XCTAssertEqual(firstArticle?.targetWords.map(\.spelling), words.map(\.spelling))
+        XCTAssertEqual(firstArticle?.content, "word1 word2 word3\n\nword4 word5 word6")
+        XCTAssertNil(secondArticle)
+
+        let capturedBatches = await collector.batches.map { $0.map(\.spelling) }
+        XCTAssertEqual(
+            capturedBatches,
+            [
+                ["word1", "word2", "word3", "word4", "word5", "word6"],
+                ["word1", "word2", "word3"],
+                ["word4", "word5", "word6"]
+            ]
+        )
+    }
+
+    func testPagingSessionComposesSingleArticleAfterTimeoutFailure() async throws {
+        let collector = BatchCollector()
+        let mockLLM = MockLLMService { words, scene, topic in
+            await collector.append(words)
+            if words.count > 1 {
+                throw LLMError.requestTimedOut(45)
+            }
+
+            return Article(
+                id: UUID(),
+                scene: scene,
+                topic: topic,
+                content: words.map(\.spelling).joined(separator: " "),
+                targetWords: words
+            )
+        }
+        let words = (1...2).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let mockMaiMemo = MockMaiMemoService(words: words)
+        let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, batchSize: 2)
+        let session = generator.makePagingSession()
+
+        let firstArticle = try await session.loadNextArticle()
+        let secondArticle = try await session.loadNextArticle()
+
+        XCTAssertEqual(firstArticle?.targetWords.map(\.spelling), ["word1", "word2"])
+        XCTAssertEqual(firstArticle?.content, "word1\n\nword2")
+        XCTAssertNil(secondArticle)
+
+        let capturedBatches = await collector.batches.map { $0.map(\.spelling) }
+        XCTAssertEqual(
+            capturedBatches,
+            [
+                ["word1", "word2"],
+                ["word1"],
+                ["word2"]
+            ]
+        )
+    }
+
     func testUsesConfiguredScenesAndTopicWhenGeneratingArticles() async throws {
         let recorder = GenerationRecorder()
         let mockLLM = MockLLMService { words, scene, topic in

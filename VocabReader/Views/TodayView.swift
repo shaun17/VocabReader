@@ -17,6 +17,13 @@ final class TodayViewModel: ObservableObject {
         self.generatorFactory = generatorFactory
     }
 
+    /// 当前已生成文章覆盖的目标词数量，用于和设置里的今日总词数对齐展示。
+    var coveredWordCount: Int {
+        articles.reduce(into: 0) { partialResult, article in
+            partialResult += article.targetWords.count
+        }
+    }
+
     func loadArticles() async {
         await reloadArticles(force: false)
     }
@@ -125,6 +132,7 @@ final class TodayViewModel: ObservableObject {
 
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
+    @ObservedObject private var settings = SettingsStore.shared
     @State private var showSettings = false
     @State private var selectedArticle: Article?
     @State private var settingsSnapshot = SettingsStore.shared.articleGenerationSettings
@@ -156,6 +164,11 @@ struct TodayView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 20) {
+                            TodayVocabularyProgressView(
+                                coveredWordCount: viewModel.coveredWordCount,
+                                targetWordCount: settings.articleWordCount
+                            )
+
                             if let error = viewModel.error {
                                 Text(error)
                                     .font(.footnote)
@@ -259,5 +272,43 @@ struct TodayView: View {
         .task {
             await viewModel.loadArticles()
         }
+    }
+}
+
+private struct TodayVocabularyProgressView: View {
+    let coveredWordCount: Int
+    let targetWordCount: Int
+
+    private var normalizedTarget: Int {
+        max(targetWordCount, 1)
+    }
+
+    private var displayedCoveredCount: Int {
+        min(coveredWordCount, normalizedTarget)
+    }
+
+    private var progressValue: Double {
+        Double(displayedCoveredCount) / Double(normalizedTarget)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("今日词汇")
+                    .font(.system(.subheadline, design: .serif).weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("\(displayedCoveredCount)/\(normalizedTarget)")
+                    .font(.system(.footnote, design: .serif).weight(.semibold))
+                    .foregroundStyle(Color.readingTitle)
+            }
+
+            // 显示今日目标词汇覆盖进度，避免拆分成多篇后误以为设置未生效。
+            ProgressView(value: progressValue)
+                .tint(Color.readingTitle)
+        }
+        .padding(.top, 4)
     }
 }

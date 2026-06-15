@@ -4,55 +4,112 @@ import SwiftUI
 struct ArticleContentFormatter {
     /// 格式化整篇文章正文，统一走目标词高亮逻辑。
     func format(article: Article) -> AttributedString {
-        format(content: article.content, targetWords: article.targetWords)
+        format(
+            content: article.content,
+            targetWords: article.targetWords,
+            vocabularyOccurrences: article.vocabularyOccurrences
+        )
     }
 
     /// 格式化单个段落，只处理正文和单词链接；段落操作按钮由 SwiftUI 原生 Button 承担。
     func formatParagraph(
         content: String,
-        targetWords: [VocabWord]
+        targetWords: [VocabWord],
+        vocabularyOccurrences: [ArticleVocabularyOccurrence] = []
     ) -> AttributedString {
-        format(content: content, targetWords: targetWords)
+        format(
+            content: content,
+            targetWords: targetWords,
+            vocabularyOccurrences: vocabularyOccurrences
+        )
+    }
+
+    /// 优先使用 LLM 内联标记解析出的真实范围；旧文章没有范围时回退到本地词形匹配。
+    func format(
+        content: String,
+        targetWords: [VocabWord],
+        vocabularyOccurrences: [ArticleVocabularyOccurrence]
+    ) -> AttributedString {
+        guard !vocabularyOccurrences.isEmpty else {
+            return format(content: content, targetWords: targetWords)
+        }
+
+        return formatMarkedOccurrences(
+            content: content,
+            vocabularyOccurrences: vocabularyOccurrences
+        )
     }
 
     /// 标记文章里的目标词，供点击查词使用。
     func format(content: String, targetWords: [VocabWord]) -> AttributedString {
         let matcher = TargetWordMatcher(targetWords: targetWords)
+        return formatMarkedOccurrences(
+            content: content,
+            vocabularyOccurrences: matcher.occurrences(in: content)
+        )
+    }
 
+    /// 根据已验证的正文 range 高亮目标词，支持空格词组和不规则变形片段。
+    private func formatMarkedOccurrences(
+        content: String,
+        vocabularyOccurrences: [ArticleVocabularyOccurrence]
+    ) -> AttributedString {
         let nsContent = content as NSString
-        let fullRange = NSRange(location: 0, length: nsContent.length)
-        let regex = try? NSRegularExpression(pattern: TargetWordMatcher.wordPattern)
-        let matches = regex?.matches(in: content, range: fullRange) ?? []
-
+        let sortedOccurrences = vocabularyOccurrences.sorted {
+            $0.range.location < $1.range.location
+        }
         var result = AttributedString()
         var currentLocation = 0
 
-        for match in matches {
-            if match.range.location > currentLocation {
-                let prefix = nsContent.substring(with: NSRange(location: currentLocation, length: match.range.location - currentLocation))
-                result += AttributedString(prefix)
+        for occurrence in sortedOccurrences {
+            guard isValid(occurrence.range, in: nsContent), occurrence.range.location >= currentLocation else {
+                continue
             }
 
-            let token = nsContent.substring(with: match.range)
-            if let word = matcher.word(matching: token) {
-                var span = AttributedString(token)
-                span.foregroundColor = .accentColor
-                span.underlineStyle = .single
-                span.link = URL(string: "word://\(word.spelling.lowercased())")
-                result += span
-            } else {
-                result += AttributedString(token)
+            if occurrence.range.location > currentLocation {
+                let prefixRange = NSRange(
+                    location: currentLocation,
+                    length: occurrence.range.location - currentLocation
+                )
+                result += AttributedString(nsContent.substring(with: prefixRange))
             }
 
-            currentLocation = match.range.location + match.range.length
+            let surfaceText = nsContent.substring(with: occurrence.range)
+            result += linkedSpan(text: surfaceText, word: occurrence.word)
+            currentLocation = occurrence.range.location + occurrence.range.length
         }
 
         if currentLocation < nsContent.length {
-            let suffix = nsContent.substring(from: currentLocation)
-            result += AttributedString(suffix)
+            result += AttributedString(nsContent.substring(from: currentLocation))
         }
 
         return result
+    }
+
+    /// 构造可点击的目标词片段，URL host 做百分号编码以支持空格词组。
+    private func linkedSpan(text: String, word: VocabWord) -> AttributedString {
+        var span = AttributedString(text)
+        span.foregroundColor = .accentColor
+        span.underlineStyle = .single
+        span.link = wordURL(for: word)
+        return span
+    }
+
+    /// 生成 word:// 链接；保留原有小写行为，同时允许词组通过 URL host 传递。
+    private func wordURL(for word: VocabWord) -> URL? {
+        let allowedCharacters = CharacterSet.urlHostAllowed
+        guard let encoded = word.spelling.lowercased().addingPercentEncoding(withAllowedCharacters: allowedCharacters) else {
+            return nil
+        }
+
+        return URL(string: "word://\(encoded)")
+    }
+
+    /// 防止 LLM 标记解析后的 range 因后续文本变化越界导致崩溃。
+    private func isValid(_ range: NSRange, in content: NSString) -> Bool {
+        range.location >= 0 &&
+            range.length >= 0 &&
+            range.location + range.length <= content.length
     }
 }
 
@@ -60,6 +117,7 @@ struct ArticleContentFormatter {
 struct TargetWordMatcher {
     static let wordPattern = #"[A-Za-z]+(?:['’-][A-Za-z]+)*"#
 
+    private let targetWords: [VocabWord]
     private let wordByForm: [String: VocabWord]
     private let canonicalKeyByForm: [String: String]
 
@@ -79,6 +137,7 @@ struct TargetWordMatcher {
             }
         }
 
+        self.targetWords = targetWords
         self.wordByForm = wordByForm
         self.canonicalKeyByForm = canonicalKeyByForm
     }
@@ -88,12 +147,28 @@ struct TargetWordMatcher {
         wordByForm[Self.normalizedToken(token)]
     }
 
+    /// 返回正文中本地规则可以证明命中的目标词范围，用于无 LLM 标记时的兜底校验和高亮。
+    func occurrences(in content: String, excluding excludedRanges: [NSRange] = []) -> [ArticleVocabularyOccurrence] {
+        let phraseOccurrences = exactPhraseOccurrences(in: content, excluding: excludedRanges)
+        let occupiedRanges = excludedRanges + phraseOccurrences.map(\.range)
+        let tokenOccurrences = tokenOccurrences(in: content, excluding: occupiedRanges)
+
+        return (phraseOccurrences + tokenOccurrences).sorted {
+            $0.range.location < $1.range.location
+        }
+    }
+
     /// 找出正文里完全没有出现过的目标词，屈折变化也算作已覆盖。
     static func missingWords(in content: String, targetWords: [VocabWord]) -> [VocabWord] {
         let matcher = TargetWordMatcher(targetWords: targetWords)
         let coveredKeys = Set(tokens(in: content).compactMap { matcher.canonicalKey(matching: $0) })
+        let coveredPhraseIDs = Set(matcher.exactPhraseOccurrences(in: content).map(\.word.id))
 
         return targetWords.filter { word in
+            if coveredPhraseIDs.contains(word.id) {
+                return false
+            }
+
             let key = normalizedToken(word.spelling)
             return !key.isEmpty && !coveredKeys.contains(key)
         }
@@ -102,6 +177,55 @@ struct TargetWordMatcher {
     /// 返回正文 token 命中的目标词规范 key，用于生成后缺词校验。
     private func canonicalKey(matching token: String) -> String? {
         canonicalKeyByForm[Self.normalizedToken(token)]
+    }
+
+    /// 找出单词级命中，支持原词和常见屈折变化，并避开已经由词组或 LLM 标记占用的范围。
+    private func tokenOccurrences(in content: String, excluding excludedRanges: [NSRange]) -> [ArticleVocabularyOccurrence] {
+        let nsContent = content as NSString
+        let fullRange = NSRange(location: 0, length: nsContent.length)
+        let regex = try? NSRegularExpression(pattern: Self.wordPattern)
+        let matches = regex?.matches(in: content, range: fullRange) ?? []
+
+        return matches.compactMap { match in
+            guard !Self.overlaps(match.range, withAnyOf: excludedRanges) else { return nil }
+
+            let token = nsContent.substring(with: match.range)
+            guard let word = word(matching: token) else { return nil }
+
+            return ArticleVocabularyOccurrence(
+                word: word,
+                surfaceText: token,
+                range: match.range
+            )
+        }
+    }
+
+    /// 对空格词组做大小写不敏感的精确短语匹配；不推断不规则变化，变化词组仍依赖 LLM 标记。
+    private func exactPhraseOccurrences(in content: String, excluding excludedRanges: [NSRange] = []) -> [ArticleVocabularyOccurrence] {
+        let nsContent = content as NSString
+        let fullRange = NSRange(location: 0, length: nsContent.length)
+
+        return targetWords.flatMap { word in
+            let parts = word.spelling
+                .split(whereSeparator: { $0.isWhitespace })
+                .map(String.init)
+            guard parts.count > 1 else { return [ArticleVocabularyOccurrence]() }
+
+            let escapedParts = parts.map { NSRegularExpression.escapedPattern(for: $0) }
+            let pattern = #"(?<![A-Za-z])"# + escapedParts.joined(separator: #"\s+"#) + #"(?![A-Za-z])"#
+            let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+            let matches = regex?.matches(in: content, range: fullRange) ?? []
+
+            return matches.compactMap { match in
+                guard !Self.overlaps(match.range, withAnyOf: excludedRanges) else { return nil }
+
+                return ArticleVocabularyOccurrence(
+                    word: word,
+                    surfaceText: nsContent.substring(with: match.range),
+                    range: match.range
+                )
+            }
+        }
     }
 
     /// 从正文中提取英文 token，保持和高亮器相同的分词边界。
@@ -261,5 +385,13 @@ struct TargetWordMatcher {
     /// 判断英文辅音，用于常见屈折规则。
     private static func isConsonant(_ character: Character) -> Bool {
         character >= "a" && character <= "z" && !isVowel(character)
+    }
+
+    /// 判断候选命中是否和已有高亮范围重叠，避免 AttributedString 嵌套链接。
+    private static func overlaps(_ range: NSRange, withAnyOf ranges: [NSRange]) -> Bool {
+        ranges.contains { existingRange in
+            range.location < existingRange.location + existingRange.length &&
+                existingRange.location < range.location + range.length
+        }
     }
 }

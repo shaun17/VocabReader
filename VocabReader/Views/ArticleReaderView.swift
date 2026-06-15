@@ -255,7 +255,8 @@ private struct ArticleParagraphSection: View {
                 attributedText: NSAttributedString(
                     formatter.formatParagraph(
                         content: paragraph.content,
-                        targetWords: targetWords
+                        targetWords: targetWords,
+                        vocabularyOccurrences: paragraph.vocabularyOccurrences
                     )
                 ),
                 onOpenURL: { url in
