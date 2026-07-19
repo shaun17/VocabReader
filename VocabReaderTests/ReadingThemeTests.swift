@@ -3,9 +3,19 @@ import UIKit
 @testable import VocabReader
 
 final class ReadingThemeTests: XCTestCase {
-    /// 阅读辅助操作必须提供足够大的触控区域，避免后续视觉调整破坏可点击性。
-    func testSupplementActionsMeetMinimumTouchTarget() {
-        XCTAssertGreaterThanOrEqual(ReadingSupplementActionMetrics.minimumHeight, 44)
+    /// 阅读辅助操作视觉上保持紧凑，但透明触控区域仍必须满足 44pt。
+    func testSupplementActionsSeparateCompactVisualFromTouchTarget() {
+        XCTAssertGreaterThanOrEqual(ReadingSupplementActionMetrics.minimumTouchHeight, 44)
+        XCTAssertLessThan(
+            ReadingSupplementActionMetrics.visualHeight,
+            ReadingSupplementActionMetrics.minimumTouchHeight
+        )
+        XCTAssertLessThanOrEqual(ReadingSupplementActionMetrics.visualHeight, 30)
+        XCTAssertGreaterThan(
+            ReadingSupplementActionMetrics.backgroundVerticalInset(for: 12),
+            0,
+            "UIKit 背景必须缩进，不能重新填满整个触控区域"
+        )
     }
 
     /// 深色阅读背景必须是有暖棕倾向的炭黑，不能退化成纯黑。

@@ -53,7 +53,6 @@ struct SettingsView: View {
     private let showsCancelButton: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var draft: SettingsDraft
     @State private var initialAppearance: AppAppearance
     @State private var didSave = false
@@ -78,7 +77,7 @@ struct SettingsView: View {
                 LinedPaperBackground()
 
                 ScrollView {
-                    LazyVStack(spacing: 18) {
+                    LazyVStack(spacing: 14) {
                         SettingsPanelCard(panel: .appearance) {
                             appearanceSettingsContent
                         }
@@ -95,9 +94,9 @@ struct SettingsView: View {
                             languageModelSettingsContent
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                    .padding(.bottom, 36)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 28)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
@@ -124,11 +123,10 @@ struct SettingsView: View {
     private var appearanceSettingsContent: some View {
         SettingsFieldLabel("显示模式")
 
-        LazyVGrid(columns: SettingsLayout.choiceColumns(for: dynamicTypeSize), spacing: 8) {
+        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
             ForEach(AppAppearance.allCases) { appearance in
                 SettingsChoiceButton(
                     title: appearance.title,
-                    systemImage: appearance.systemImage,
                     isSelected: draft.appearance == appearance
                 ) {
                     previewAppearance(appearance)
@@ -153,11 +151,10 @@ struct SettingsView: View {
     private var articleSettingsContent: some View {
         SettingsFieldLabel("文章主题")
 
-        LazyVGrid(columns: SettingsLayout.choiceColumns(for: dynamicTypeSize), spacing: 8) {
+        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
             ForEach(ArticleTopic.allCases) { topic in
                 SettingsChoiceButton(
                     title: topic.rawValue,
-                    systemImage: topic.systemImageName,
                     isSelected: draft.selectedTopic == topic
                 ) {
                     draft.selectedTopic = topic
@@ -167,11 +164,10 @@ struct SettingsView: View {
 
         SettingsFieldLabel("文章体裁")
 
-        LazyVGrid(columns: SettingsLayout.choiceColumns(for: dynamicTypeSize), spacing: 8) {
+        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
             ForEach(ArticleScene.allCases) { scene in
                 SettingsChoiceButton(
                     title: scene.rawValue,
-                    systemImage: scene.systemImageName,
                     isSelected: draft.isSceneEnabled(scene)
                 ) {
                     draft.setSceneEnabled(!draft.isSceneEnabled(scene), for: scene)
@@ -287,18 +283,5 @@ struct SettingsView: View {
     private func restoreAppearanceIfNeeded() {
         guard !didSave else { return }
         settings.appearance = initialAppearance
-    }
-}
-
-// MARK: - Settings layout
-
-private enum SettingsLayout {
-    /// 普通字号保持紧凑三列；辅助字号改为单列，避免主题和文章选项被截断。
-    static func choiceColumns(for dynamicTypeSize: DynamicTypeSize) -> [GridItem] {
-        let columnCount = dynamicTypeSize.isAccessibilitySize ? 1 : 3
-        return Array(
-            repeating: GridItem(.flexible(), spacing: 8),
-            count: columnCount
-        )
     }
 }

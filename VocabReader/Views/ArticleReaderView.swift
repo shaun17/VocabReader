@@ -11,6 +11,7 @@ struct ArticleReaderView: View {
     @State private var showTranslation = false
     @State private var showBookmarkToast = false
     @State private var bookmarkToastPresentationID = 0
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @StateObject private var audioPlayer: ArticleAudioPlayerViewModel
     @ObservedObject private var bookmarkStore = BookmarkStore.shared
     private let formatter = ArticleContentFormatter()
@@ -68,8 +69,12 @@ struct ArticleReaderView: View {
                 }
                 .onChange(of: audioPlayer.currentParagraphIndex) { _, newIndex in
                     guard let newIndex else { return }
-                    withAnimation {
+                    if accessibilityReduceMotion {
                         proxy.scrollTo(newIndex, anchor: .center)
+                    } else {
+                        withAnimation {
+                            proxy.scrollTo(newIndex, anchor: .center)
+                        }
                     }
                 }
             }
@@ -82,7 +87,7 @@ struct ArticleReaderView: View {
                 BookmarkSuccessToast()
                     .padding(.top, 12)
                     .padding(.horizontal, 20)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.opacity)
                     .allowsHitTesting(false)
             }
         }
@@ -222,6 +227,7 @@ private struct ArticleParagraphSection: View {
 
     @StateObject private var viewModel: ArticleParagraphTranslationViewModel
     @State private var drawerState = ParagraphSupplementDrawerState<ArticleParagraphSupplement>()
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     private static let supplementAnimationDuration = 0.26
 
     init(
@@ -291,12 +297,15 @@ private struct ArticleParagraphSection: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isHighlighted ? Color.readingTitle.opacity(0.08) : Color.clear)
         )
-        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .animation(
+            accessibilityReduceMotion ? nil : .easeInOut(duration: 0.3),
+            value: isHighlighted
+        )
         .onAppear {
-            updateSupplementDrawer(with: currentSupplement, animated: false)
+            updateSupplementDrawer(with: currentSupplement)
         }
         .onChange(of: currentSupplement) { _, newSupplement in
-            updateSupplementDrawer(with: newSupplement, animated: true)
+            updateSupplementDrawer(with: newSupplement)
         }
         .onTapGesture(count: 2) {
             onTapParagraph()
@@ -337,8 +346,8 @@ private struct ArticleParagraphSection: View {
         }
     }
 
-    private var supplementAnimation: Animation {
-        .easeInOut(duration: Self.supplementAnimationDuration)
+    private var supplementAnimation: Animation? {
+        accessibilityReduceMotion ? nil : .easeInOut(duration: Self.supplementAnimationDuration)
     }
 
     private var currentSupplement: ArticleParagraphSupplement? {
@@ -358,25 +367,20 @@ private struct ArticleParagraphSection: View {
     }
 
     /// 外层只控制抽屉开合；内容在关闭动画结束前保留，避免文章先回流、旧内容再淡出。
-    private func updateSupplementDrawer(with supplement: ArticleParagraphSupplement?, animated: Bool) {
+    private func updateSupplementDrawer(with supplement: ArticleParagraphSupplement?) {
         // 没有已渲染内容且新状态也是空时，不启动关闭计时，避免普通段落出现时产生多余状态更新。
         guard supplement != nil || drawerState.renderedSupplement != nil || drawerState.isOpen else { return }
 
-        var mutation: ParagraphSupplementDrawerMutation?
-        let updates = {
-            mutation = drawerState.update(with: supplement)
-        }
-
-        if animated {
-            withAnimation(supplementAnimation, updates)
-        } else {
-            updates()
-        }
+        let mutation = drawerState.update(with: supplement)
 
         guard case let .close(token) = mutation else { return }
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(Self.supplementAnimationDuration * 1_000_000_000))
+            if !accessibilityReduceMotion {
+                try? await Task.sleep(
+                    nanoseconds: UInt64(Self.supplementAnimationDuration * 1_000_000_000)
+                )
+            }
             drawerState.finishClose(token: token)
         }
     }
@@ -425,7 +429,7 @@ private struct ArticleParagraphSection: View {
 
 private struct ParagraphSupplementDrawer<Content: View>: View {
     let isOpen: Bool
-    let animation: Animation
+    let animation: Animation?
     @ViewBuilder let content: () -> Content
 
     @State private var measuredHeight: CGFloat = 0
@@ -446,7 +450,6 @@ private struct ParagraphSupplementDrawer<Content: View>: View {
             .clipped()
             .accessibilityHidden(!isOpen)
             .animation(animation, value: isOpen)
-            .animation(animation, value: measuredHeight)
             .onPreferenceChange(ParagraphSupplementHeightPreferenceKey.self) { height in
                 measuredHeight = height
             }
@@ -620,7 +623,7 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             [translationButton, analysisButton].forEach { button in
                 button.titleLabel?.adjustsFontForContentSizeCategory = true
                 button.heightAnchor.constraint(
-                    greaterThanOrEqualToConstant: ReadingSupplementActionMetrics.minimumHeight
+                    greaterThanOrEqualToConstant: ReadingSupplementActionMetrics.minimumTouchHeight
                 ).isActive = true
             }
 
@@ -643,12 +646,15 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             let backgroundColor = presentation.isActive
                 ? ReadingPalette.accent
                 : ReadingPalette.controlFill
-            let borderColor = ReadingPalette.accent.withAlphaComponent(presentation.isActive ? 0.72 : 0.26)
+            let borderColor = ReadingPalette.accent.withAlphaComponent(presentation.isActive ? 0.52 : 0.24)
             let actionFont = UIFontMetrics(forTextStyle: .footnote).scaledFont(
                 for: UIFont.systemFont(
                     ofSize: ReadingSupplementActionMetrics.fontPointSize,
                     weight: .semibold
                 )
+            )
+            let backgroundVerticalInset = ReadingSupplementActionMetrics.backgroundVerticalInset(
+                for: actionFont.lineHeight
             )
 
             var configuration = UIButton.Configuration.plain()
@@ -671,6 +677,12 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             configuration.background.backgroundColor = backgroundColor
             configuration.background.strokeColor = borderColor
             configuration.background.strokeWidth = ReadingSupplementActionMetrics.borderWidth
+            configuration.background.backgroundInsets = NSDirectionalEdgeInsets(
+                top: backgroundVerticalInset,
+                leading: 0,
+                bottom: backgroundVerticalInset,
+                trailing: 0
+            )
             configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
                 var outgoing = incoming
                 outgoing.font = actionFont
@@ -696,8 +708,8 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             let actionLayout = prepareActionStack(for: width)
             let actionSize = actionLayout.size
             let line = lastLineLayout(width: width, textHeight: textHeight)
-            let horizontalGap: CGFloat = 8
-            let verticalGap: CGFloat = 4
+            let horizontalGap: CGFloat = 6
+            let verticalGap: CGFloat = 2
 
             var actionX = line.endX + horizontalGap
             var actionY = line.rect.midY - actionSize.height / 2

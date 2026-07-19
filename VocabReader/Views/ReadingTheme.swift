@@ -161,15 +161,25 @@ struct ReadingSupplementActionPresentation: Equatable {
 
 /// “页边批注工具”的统一尺寸令牌，供 SwiftUI 收藏按钮和 UIKit 行尾按钮共同消费。
 enum ReadingSupplementActionMetrics {
-    /// 同时作为视觉最小高度与触控最小高度，满足移动端 44pt 可点击区域要求。
-    static let minimumHeight: CGFloat = 44
-    static let horizontalPadding: CGFloat = 10
-    static let verticalPadding: CGFloat = 3
-    static let contentSpacing: CGFloat = 5
-    static let groupSpacing: CGFloat = 8
-    static let borderWidth: CGFloat = 0.8
+    /// 视觉壳保持轻巧，透明触控层仍满足移动端 44pt 可点击区域要求。
+    static let visualHeight: CGFloat = 30
+    static let minimumTouchHeight: CGFloat = 44
+    static let horizontalPadding: CGFloat = 9
+    static let verticalPadding: CGFloat = 2
+    static let contentSpacing: CGFloat = 4
+    static let groupSpacing: CGFloat = 6
+    static let borderWidth: CGFloat = 0.75
     static let fontPointSize: CGFloat = 12
     static let iconPointSize: CGFloat = 11
+
+    /// UIKit 按钮保留 44pt 外框，只把胶囊背景向内收紧到可容纳文字的高度。
+    static func backgroundVerticalInset(for lineHeight: CGFloat) -> CGFloat {
+        let requiredVisualHeight = max(
+            visualHeight,
+            ceil(lineHeight + verticalPadding * 2)
+        )
+        return max(0, (minimumTouchHeight - requiredVisualHeight) / 2)
+    }
 }
 
 /// 收藏页使用的阅读辅助按钮；文章页的 UIKit 实现复用同一展示模型和视觉令牌。
@@ -184,11 +194,10 @@ struct ReadingSupplementActionButton: View {
 
                 Text(presentation.title)
             }
-            .font(.system(size: ReadingSupplementActionMetrics.fontPointSize, weight: .semibold))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, ReadingSupplementActionMetrics.horizontalPadding)
-            .padding(.vertical, ReadingSupplementActionMetrics.verticalPadding)
-            .frame(minHeight: ReadingSupplementActionMetrics.minimumHeight)
+            .frame(minHeight: ReadingSupplementActionMetrics.visualHeight)
             .background {
                 Capsule(style: .continuous)
                     .fill(backgroundColor)
@@ -197,6 +206,8 @@ struct ReadingSupplementActionButton: View {
                             .stroke(borderColor, lineWidth: ReadingSupplementActionMetrics.borderWidth)
                     }
             }
+            .frame(minHeight: ReadingSupplementActionMetrics.minimumTouchHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(ReadingSupplementActionButtonStyle())
         .disabled(presentation.isDisabled)
@@ -212,7 +223,7 @@ struct ReadingSupplementActionButton: View {
                 .tint(foregroundColor)
         } else {
             Image(systemName: presentation.systemImage)
-                .font(.system(size: ReadingSupplementActionMetrics.iconPointSize, weight: .semibold))
+                .font(.caption2.weight(.semibold))
         }
     }
 
@@ -225,7 +236,7 @@ struct ReadingSupplementActionButton: View {
     }
 
     private var borderColor: Color {
-        Color.readingTitle.opacity(presentation.isActive ? 0.72 : 0.26)
+        Color.readingTitle.opacity(presentation.isActive ? 0.52 : 0.24)
     }
 
     private var disabledOpacity: Double {
@@ -234,12 +245,10 @@ struct ReadingSupplementActionButton: View {
 }
 
 private struct ReadingSupplementActionButtonStyle: ButtonStyle {
-    /// 轻微缩放模拟纸面工具被按下的触感，不引入抢眼动画。
+    /// 只保留即时明暗反馈，避免短按钮在行尾产生缩放跳动。
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

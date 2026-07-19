@@ -214,6 +214,30 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(SettingsPanel.allCases.allSatisfy { !$0.subtitle.isEmpty })
     }
 
+    /// 设置选项只缩小可见外壳，不能跟着缩小实际可点击区域。
+    func testSettingsChoiceButtonsSeparateCompactVisualFromTouchTarget() {
+        XCTAssertGreaterThanOrEqual(SettingsChoiceButtonMetrics.minimumTouchHeight, 44)
+        XCTAssertLessThan(
+            SettingsChoiceButtonMetrics.visualHeight,
+            SettingsChoiceButtonMetrics.minimumTouchHeight
+        )
+        XCTAssertLessThanOrEqual(SettingsChoiceButtonMetrics.horizontalPadding, 9)
+    }
+
+    /// 词量步进器必须用行高制造呼吸空间，并为三个交互区保留完整触控面积。
+    func testSettingsStepperUsesComfortableRowsAndAccessibleTouchTargets() {
+        XCTAssertGreaterThanOrEqual(SettingsStepperMetrics.rowVerticalPadding, 8)
+        XCTAssertGreaterThanOrEqual(SettingsStepperMetrics.minimumTouchSize, 44)
+        XCTAssertLessThan(
+            SettingsStepperMetrics.controlVisualHeight,
+            SettingsStepperMetrics.minimumTouchSize
+        )
+        XCTAssertGreaterThan(
+            SettingsStepperMetrics.maximumValueWidth,
+            SettingsStepperMetrics.minimumTouchSize
+        )
+    }
+
     private func clearStoredSettings() {
         storage.keychain.delete(key: storage.maiMemoTokenKey)
         storage.keychain.delete(key: storage.llmAPIKeyKey)

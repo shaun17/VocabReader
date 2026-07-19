@@ -6,20 +6,13 @@ struct SettingsPanelCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 8) {
                 Image(systemName: panel.systemImage)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.readingTitle)
-                    .frame(width: 38, height: 38)
-                    .background {
-                        Circle()
-                            .fill(Color.readingTitle.opacity(0.10))
-                            .overlay {
-                                Circle()
-                                    .stroke(Color.readingTitle.opacity(0.16), lineWidth: 0.8)
-                            }
-                    }
+                    .frame(width: 18, alignment: .leading)
+                    .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(panel.title)
@@ -36,10 +29,16 @@ struct SettingsPanelCard<Content: View>: View {
 
             content
         }
-        .padding(18)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            ReadingCardBackground()
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.readingCardFill)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.readingSeparator.opacity(0.72), lineWidth: 0.8)
+                }
         }
     }
 }
@@ -59,38 +58,65 @@ struct SettingsFieldLabel: View {
     }
 }
 
+/// 设置选项把紧凑视觉壳与完整触控区域分离，避免三列网格再次出现大块胶囊。
+enum SettingsChoiceButtonMetrics {
+    static let visualHeight: CGFloat = 34
+    static let minimumTouchHeight: CGFloat = 44
+    static let horizontalPadding: CGFloat = 9
+    static let contentSpacing: CGFloat = 4
+    static let cornerRadius: CGFloat = 10
+    static let borderWidth: CGFloat = 0.75
+}
+
 struct SettingsChoiceButton: View {
     let title: String
-    let systemImage: String
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: systemImage)
-
+            HStack(spacing: SettingsChoiceButtonMetrics.contentSpacing) {
                 Text(title)
-                    .lineLimit(2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
-                if isSelected {
-                    Image(systemName: "checkmark")
-                }
+                Image(systemName: "checkmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.readingTitle)
+                    .frame(width: 10)
+                    .opacity(isSelected ? 1 : 0)
+                    .accessibilityHidden(true)
             }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(isSelected ? Color.readingAccentForeground : Color.readingTitle)
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(isSelected ? Color.readingTitle : Color.readingControlFill)
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .stroke(
-                                Color.readingTitle.opacity(isSelected ? 0.72 : 0.24),
-                                lineWidth: 0.8
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color.readingTextPrimary)
+                .padding(.horizontal, SettingsChoiceButtonMetrics.horizontalPadding)
+                .frame(minHeight: SettingsChoiceButtonMetrics.visualHeight)
+                .background {
+                    RoundedRectangle(
+                        cornerRadius: SettingsChoiceButtonMetrics.cornerRadius,
+                        style: .continuous
+                    )
+                        .fill(
+                            isSelected
+                                ? Color.readingTitle.opacity(0.14)
+                                : Color.readingControlFill
+                        )
+                        .overlay {
+                            RoundedRectangle(
+                                cornerRadius: SettingsChoiceButtonMetrics.cornerRadius,
+                                style: .continuous
                             )
-                    }
-            }
+                                .stroke(
+                                    Color.readingTitle.opacity(isSelected ? 0.48 : 0.20),
+                                    lineWidth: SettingsChoiceButtonMetrics.borderWidth
+                                )
+                        }
+                }
+                .frame(
+                    minWidth: SettingsChoiceButtonMetrics.minimumTouchHeight,
+                    minHeight: SettingsChoiceButtonMetrics.minimumTouchHeight
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(SettingsPressButtonStyle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -100,23 +126,17 @@ struct SettingsChoiceButton: View {
 struct SettingsHint: View {
     let text: String
 
-    /// 提示文字统一使用信息图标和浅色纸面，避免游离在卡片中。
+    /// 提示只承担说明作用，不再额外套用图标和圆角底板。
     init(_ text: String) {
         self.text = text
     }
 
     var body: some View {
-        Label(text, systemImage: "info.circle")
+        Text(text)
             .font(.caption)
             .foregroundStyle(Color.readingTextSecondary)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.readingControlFill.opacity(0.72))
-            }
     }
 }
 
@@ -190,8 +210,8 @@ struct SettingsConnectionStatus: View {
                 }
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(buttonForegroundColor)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 36)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 30)
                 .background {
                     Capsule(style: .continuous)
                         .fill(buttonBackgroundColor)
@@ -200,6 +220,8 @@ struct SettingsConnectionStatus: View {
                                 .stroke(buttonBorderColor, lineWidth: 0.8)
                         }
                 }
+                .frame(minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(SettingsPressButtonStyle())
             .disabled(!isEnabled || status == .testing)
@@ -239,11 +261,9 @@ struct SettingsConnectionStatus: View {
 }
 
 struct SettingsPressButtonStyle: ButtonStyle {
-    /// 所有自定义按钮共享轻微按压反馈，不引入与阅读页不一致的弹跳动画。
+    /// 保留即时明暗反馈，不再让设置按钮缩放或播放缓动动画。
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.84 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

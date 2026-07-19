@@ -91,7 +91,6 @@ private struct BookmarkRow: View {
     let onToggle: () -> Void
 
     @StateObject private var supplementViewModel: ArticleParagraphTranslationViewModel
-    private let expansionAnimation = Animation.easeInOut(duration: 0.18)
 
     /// 每个收藏行复用文章段落的翻译/解析状态机，并把收藏例句作为请求上下文。
     init(
@@ -172,7 +171,6 @@ private struct BookmarkRow: View {
         .background {
             ReadingCardBackground()
         }
-        .animation(expansionAnimation, value: isExpanded)
     }
 
     /// 将收藏页状态映射到全局统一的阅读辅助按钮展示模型。
