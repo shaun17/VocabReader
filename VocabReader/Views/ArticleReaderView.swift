@@ -143,7 +143,7 @@ private struct ArticleMetadataHeader: View {
             Label(article.topic.rawValue, systemImage: article.topic.systemImageName)
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.readingTextSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -157,7 +157,7 @@ private struct BookmarkSuccessToast: View {
 
             Text("收藏成功")
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.readingTextPrimary)
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 14)
@@ -265,8 +265,8 @@ private struct ArticleParagraphSection: View {
                     }
                 },
                 onBookmarkSelection: onBookmarkSelection,
-                translationActionTitle: translationActionTitle,
-                analysisActionTitle: analysisActionTitle,
+                translationActionPresentation: supplementPresentation(for: .translation),
+                analysisActionPresentation: supplementPresentation(for: .analysis),
                 onTranslateAction: {
                     Task {
                         await viewModel.didTapTranslateButton()
@@ -303,12 +303,16 @@ private struct ArticleParagraphSection: View {
         }
     }
 
-    private var translationActionTitle: String {
-        viewModel.expandedPanel == .translation ? "收起" : "翻译"
-    }
-
-    private var analysisActionTitle: String {
-        viewModel.expandedPanel == .analysis ? "收起" : "解析"
+    /// 将文章段落状态映射到与收藏页一致的阅读辅助按钮展示模型。
+    private func supplementPresentation(for action: ReadingSupplementAction) -> ReadingSupplementActionPresentation {
+        let panel: ArticleParagraphExpansionPanel = action == .translation ? .translation : .analysis
+        let isLoading = viewModel.loadingPanel == panel
+        return ReadingSupplementActionPresentation(
+            action: action,
+            isActive: viewModel.expandedPanel == panel || isLoading,
+            isLoading: isLoading,
+            isDisabled: viewModel.isLoading
+        )
     }
 
     private var loadingMessage: String {
@@ -397,25 +401,25 @@ private struct ArticleParagraphSection: View {
             Text(loadingMessage)
         }
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Color.readingTextSecondary)
     }
 
     /// 让翻译和解析内容使用同一套容器样式，展开时只改变下方区域高度。
     private func expandedContentView(_ text: String) -> some View {
         Text(text)
             .font(.body)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.readingTextSecondary)
             .textSelection(.enabled)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.readingRule.opacity(0.3))
+            .background(Color.readingControlFill)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func errorView(_ error: String) -> some View {
         Text(error)
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.readingError)
     }
 }
 
@@ -462,8 +466,8 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     let attributedText: NSAttributedString
     let onOpenURL: (URL) -> Void
     let onBookmarkSelection: (String) -> Void
-    let translationActionTitle: String
-    let analysisActionTitle: String
+    let translationActionPresentation: ReadingSupplementActionPresentation
+    let analysisActionPresentation: ReadingSupplementActionPresentation
     let onTranslateAction: () -> Void
     let onAnalyzeAction: () -> Void
 
@@ -485,9 +489,9 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         if uiView.textView.attributedText != styledText {
             uiView.textView.attributedText = styledText
         }
-        uiView.setActionTitles(
-            translation: translationActionTitle,
-            analysis: analysisActionTitle
+        uiView.setActionPresentations(
+            translation: translationActionPresentation,
+            analysis: analysisActionPresentation
         )
         uiView.onTranslateAction = onTranslateAction
         uiView.onAnalyzeAction = onAnalyzeAction
@@ -520,6 +524,11 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
             guard value == nil else { return }
             mutable.addAttribute(.font, value: bodyFont, range: range)
+        }
+
+        mutable.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+            guard value == nil else { return }
+            mutable.addAttribute(.foregroundColor, value: ReadingPalette.primaryText, range: range)
         }
 
         let inlineActionFont = UIFontMetrics(forTextStyle: .footnote)
@@ -570,11 +579,13 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             configureActionButtons()
         }
 
-        func setActionTitles(translation: String, analysis: String) {
-            setTitle(translation, for: translationButton)
-            setTitle(analysis, for: analysisButton)
-            translationButton.accessibilityLabel = translation
-            analysisButton.accessibilityLabel = analysis
+        /// 同步两枚行尾按钮的共享展示状态，保证与收藏页使用相同文案、图标和选中规则。
+        func setActionPresentations(
+            translation: ReadingSupplementActionPresentation,
+            analysis: ReadingSupplementActionPresentation
+        ) {
+            apply(translation, to: translationButton)
+            apply(analysis, to: analysisButton)
             setNeedsLayout()
         }
 
@@ -595,7 +606,7 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             textView.isSelectable = true
             textView.isScrollEnabled = false
             textView.backgroundColor = .clear
-            textView.textColor = .label
+            textView.textColor = ReadingPalette.primaryText
             textView.textContainerInset = .zero
             textView.textContainer.lineFragmentPadding = 0
             textView.adjustsFontForContentSizeCategory = true
@@ -606,19 +617,11 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
 
         /// 初始化真实按钮，由容器负责把它们摆到正文最后一行后面。
         private func configureActionButtons() {
-            let actionFont = UIFontMetrics(forTextStyle: .footnote)
-                .scaledFont(for: UIFont.systemFont(ofSize: 13))
-
             [translationButton, analysisButton].forEach { button in
-                var configuration = UIButton.Configuration.plain()
-                configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 2, bottom: 4, trailing: 2)
-                configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-                    var outgoing = incoming
-                    outgoing.font = actionFont
-                    return outgoing
-                }
-                button.configuration = configuration
                 button.titleLabel?.adjustsFontForContentSizeCategory = true
+                button.heightAnchor.constraint(
+                    greaterThanOrEqualToConstant: ReadingSupplementActionMetrics.minimumHeight
+                ).isActive = true
             }
 
             translationButton.addTarget(self, action: #selector(didTapTranslate), for: .touchUpInside)
@@ -626,16 +629,57 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
 
             actionStack.axis = .horizontal
             actionStack.alignment = .center
-            actionStack.spacing = 20
+            actionStack.spacing = ReadingSupplementActionMetrics.groupSpacing
             actionStack.addArrangedSubview(translationButton)
             actionStack.addArrangedSubview(analysisButton)
             addSubview(actionStack)
         }
 
-        private func setTitle(_ title: String, for button: UIButton) {
-            var configuration = button.configuration ?? .plain()
-            configuration.title = title
+        /// 把共享展示模型转换成 UIKit 配置，视觉数值与收藏页 SwiftUI 按钮保持一致。
+        private func apply(_ presentation: ReadingSupplementActionPresentation, to button: UIButton) {
+            let foregroundColor = presentation.isActive
+                ? ReadingPalette.accentForeground
+                : ReadingPalette.accent
+            let backgroundColor = presentation.isActive
+                ? ReadingPalette.accent
+                : ReadingPalette.controlFill
+            let borderColor = ReadingPalette.accent.withAlphaComponent(presentation.isActive ? 0.72 : 0.26)
+            let actionFont = UIFontMetrics(forTextStyle: .footnote).scaledFont(
+                for: UIFont.systemFont(
+                    ofSize: ReadingSupplementActionMetrics.fontPointSize,
+                    weight: .semibold
+                )
+            )
+
+            var configuration = UIButton.Configuration.plain()
+            configuration.title = presentation.title
+            configuration.image = presentation.isLoading ? nil : UIImage(systemName: presentation.systemImage)
+            configuration.showsActivityIndicator = presentation.isLoading
+            configuration.imagePadding = ReadingSupplementActionMetrics.contentSpacing
+            configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+                pointSize: ReadingSupplementActionMetrics.iconPointSize,
+                weight: .semibold
+            )
+            configuration.contentInsets = NSDirectionalEdgeInsets(
+                top: ReadingSupplementActionMetrics.verticalPadding,
+                leading: ReadingSupplementActionMetrics.horizontalPadding,
+                bottom: ReadingSupplementActionMetrics.verticalPadding,
+                trailing: ReadingSupplementActionMetrics.horizontalPadding
+            )
+            configuration.cornerStyle = .capsule
+            configuration.baseForegroundColor = foregroundColor
+            configuration.background.backgroundColor = backgroundColor
+            configuration.background.strokeColor = borderColor
+            configuration.background.strokeWidth = ReadingSupplementActionMetrics.borderWidth
+            configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var outgoing = incoming
+                outgoing.font = actionFont
+                return outgoing
+            }
             button.configuration = configuration
+            button.isEnabled = !presentation.isDisabled
+            button.alpha = presentation.isDisabled && !presentation.isLoading ? 0.45 : 1
+            button.accessibilityLabel = presentation.accessibilityLabel
         }
 
         @objc private func didTapTranslate() {
@@ -649,15 +693,16 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         /// 根据最后一个 glyph 的位置计算按钮坐标；行尾空间不足时才自然换到下一行。
         private func measuredLayout(for width: CGFloat) -> (textHeight: CGFloat, actionFrame: CGRect, totalHeight: CGFloat) {
             let textHeight = measuredTextHeight(for: width)
-            let actionSize = actionStack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+            let actionLayout = prepareActionStack(for: width)
+            let actionSize = actionLayout.size
             let line = lastLineLayout(width: width, textHeight: textHeight)
-            let horizontalGap: CGFloat = 10
-            let verticalGap: CGFloat = 2
+            let horizontalGap: CGFloat = 8
+            let verticalGap: CGFloat = 4
 
             var actionX = line.endX + horizontalGap
             var actionY = line.rect.midY - actionSize.height / 2
 
-            if actionX + actionSize.width > width {
+            if actionLayout.usesVerticalAxis || actionX + actionSize.width > width {
                 actionX = 0
                 actionY = textHeight + verticalGap
             }
@@ -669,6 +714,23 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
                 actionFrame: CGRect(origin: CGPoint(x: actionX, y: actionY), size: actionSize),
                 totalHeight: ceil(max(textHeight, actionY + actionSize.height))
             )
+        }
+
+        /// 辅助字号或窄正文下改为纵向按钮组，保证两枚操作按钮不会互相挤压或越界。
+        private func prepareActionStack(for width: CGFloat) -> (size: CGSize, usesVerticalAxis: Bool) {
+            let usesAccessibilitySize = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+            actionStack.axis = usesAccessibilitySize ? .vertical : .horizontal
+            actionStack.alignment = usesAccessibilitySize ? .leading : .center
+
+            var actionSize = actionStack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+            if !usesAccessibilitySize, actionSize.width > width {
+                actionStack.axis = .vertical
+                actionStack.alignment = .leading
+                actionSize = actionStack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+                return (actionSize, true)
+            }
+
+            return (actionSize, usesAccessibilitySize)
         }
 
         private func applyLayout(for width: CGFloat) {

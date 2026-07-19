@@ -37,6 +37,7 @@ final class TodayViewModel: ObservableObject {
         previousSettings: ArticleGenerationSettings,
         newSettings: ArticleGenerationSettings
     ) async {
+        guard previousSettings != newSettings else { return }
         guard !articles.isEmpty else { return }
 
         let consumedWordCount = articles.reduce(into: 0) { partialResult, article in
@@ -84,6 +85,7 @@ final class TodayViewModel: ObservableObject {
         guard inFlightArticleRequest == nil else { return }
         guard articles.last != nil else { return }
 
+        error = nil
         isLoadingMore = true
         defer { isLoadingMore = false }
 
@@ -146,7 +148,7 @@ struct TodayView: View {
                     VStack(spacing: 16) {
                         ProgressView()
                         Text("正在生成第一篇文章…")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.readingTextSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let error = viewModel.error, viewModel.articles.isEmpty {
@@ -172,7 +174,7 @@ struct TodayView: View {
                             if let error = viewModel.error {
                                 Text(error)
                                     .font(.footnote)
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Color.readingError)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
 
@@ -190,11 +192,11 @@ struct TodayView: View {
                                         ProgressView()
                                         Text("正在生成文章…")
                                             .font(.footnote)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color.readingTextSecondary)
                                     } else {
                                         Text("继续下滑生成更多")
                                             .font(.footnote)
-                                            .foregroundStyle(.tertiary)
+                                            .foregroundStyle(Color.readingTextTertiary)
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
@@ -266,7 +268,11 @@ struct TodayView: View {
                 )
             }
             .navigationDestination(isPresented: $showBookmarks) {
-                BookmarkListView(store: bookmarkStore)
+                let translationService = WordTranslatorService(config: SettingsStore.shared.llmConfig)
+                BookmarkListView(
+                    store: bookmarkStore,
+                    translator: translationService
+                )
             }
         }
         .task {
@@ -296,7 +302,7 @@ private struct TodayVocabularyProgressView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("今日词汇")
                     .font(.system(.subheadline, design: .serif).weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.readingTextPrimary)
 
                 Spacer()
 

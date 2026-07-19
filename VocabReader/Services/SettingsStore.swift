@@ -12,6 +12,7 @@ struct SettingsStoreStorage {
     let wordsPerArticleKey: String
     let selectedTopicKey: String
     let enabledScenesKey: String
+    let appearanceKey: String
 
     static let app = SettingsStoreStorage(
         defaults: .standard,
@@ -23,7 +24,8 @@ struct SettingsStoreStorage {
         articleWordCountKey: "articleWordCount",
         wordsPerArticleKey: "wordsPerArticle",
         selectedTopicKey: "selectedArticleTopic",
-        enabledScenesKey: "enabledArticleScenes"
+        enabledScenesKey: "enabledArticleScenes",
+        appearanceKey: "appAppearance"
     )
 
     static func testing(namespace: String) -> SettingsStoreStorage {
@@ -44,7 +46,8 @@ struct SettingsStoreStorage {
             articleWordCountKey: "vocabreader.tests.\(namespace).articleWordCount",
             wordsPerArticleKey: "vocabreader.tests.\(namespace).wordsPerArticle",
             selectedTopicKey: "vocabreader.tests.\(namespace).selectedArticleTopic",
-            enabledScenesKey: "vocabreader.tests.\(namespace).enabledArticleScenes"
+            enabledScenesKey: "vocabreader.tests.\(namespace).enabledArticleScenes",
+            appearanceKey: "vocabreader.tests.\(namespace).appAppearance"
         )
     }
 }
@@ -60,6 +63,7 @@ final class SettingsStore: ObservableObject {
     @Published var wordsPerArticle: Int = 10
     @Published var selectedTopic: ArticleTopic = .general
     @Published var enabledScenes: [ArticleScene] = ArticleScene.allCases
+    @Published var appearance: AppAppearance = .system
 
     private let storage: SettingsStoreStorage
 
@@ -99,7 +103,8 @@ final class SettingsStore: ObservableObject {
             articleWordCount: articleWordCount,
             wordsPerArticle: wordsPerArticle,
             selectedTopic: selectedTopic,
-            enabledScenes: enabledScenes
+            enabledScenes: enabledScenes,
+            appearance: appearance
         )
     }
 
@@ -113,6 +118,7 @@ final class SettingsStore: ObservableObject {
         wordsPerArticle = Self.normalizedWordsPerArticle(draft.wordsPerArticle)
         selectedTopic = draft.selectedTopic
         enabledScenes = Self.normalizedEnabledScenes(draft.enabledScenes)
+        appearance = draft.appearance
     }
 
     /// 将当前设置持久化到本地存储，供下次启动恢复。
@@ -125,6 +131,7 @@ final class SettingsStore: ObservableObject {
         storage.defaults.set(wordsPerArticle, forKey: storage.wordsPerArticleKey)
         storage.defaults.set(selectedTopic.rawValue, forKey: storage.selectedTopicKey)
         storage.defaults.set(enabledScenes.map(\.rawValue), forKey: storage.enabledScenesKey)
+        storage.defaults.set(appearance.rawValue, forKey: storage.appearanceKey)
     }
 
     /// 从本地存储恢复设置，并对历史值做兼容与规范化。
@@ -141,6 +148,8 @@ final class SettingsStore: ObservableObject {
         selectedTopic = ArticleTopic(rawValue: storedTopic ?? "") ?? .general
         let storedScenes = storage.defaults.stringArray(forKey: storage.enabledScenesKey) ?? []
         enabledScenes = Self.normalizedEnabledScenes(storedScenes.compactMap(ArticleScene.init(rawValue:)))
+        let storedAppearance = storage.defaults.string(forKey: storage.appearanceKey)
+        appearance = AppAppearance(rawValue: storedAppearance ?? "") ?? .system
     }
 
     private static func normalizedArticleWordCount(_ value: Int) -> Int {

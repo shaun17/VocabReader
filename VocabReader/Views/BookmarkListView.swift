@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BookmarkListView: View {
     @ObservedObject var store: BookmarkStore
+    let translator: ArticleParagraphTranslatorProtocol
 
     @State private var expandedWordID: UUID?
 
@@ -20,15 +21,15 @@ struct BookmarkListView: View {
                             ForEach(group.words) { word in
                                 BookmarkRow(
                                     word: word,
-                                    isExpanded: expandedWordID == word.id
+                                    isExpanded: expandedWordID == word.id,
+                                    translator: translator,
+                                    onToggle: {
+                                        toggleExpandedWord(word.id)
+                                    }
                                 )
-                                .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+                                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    toggleExpandedWord(word.id)
-                                }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         removeBookmark(word.id)
@@ -87,39 +88,140 @@ private struct DateGroup {
 private struct BookmarkRow: View {
     let word: BookmarkedWord
     let isExpanded: Bool
+    let onToggle: () -> Void
+
+    @StateObject private var supplementViewModel: ArticleParagraphTranslationViewModel
     private let expansionAnimation = Animation.easeInOut(duration: 0.18)
 
+    /// 每个收藏行复用文章段落的翻译/解析状态机，并把收藏例句作为请求上下文。
+    init(
+        word: BookmarkedWord,
+        isExpanded: Bool,
+        translator: ArticleParagraphTranslatorProtocol,
+        onToggle: @escaping () -> Void
+    ) {
+        self.word = word
+        self.isExpanded = isExpanded
+        self.onToggle = onToggle
+        _supplementViewModel = StateObject(
+            wrappedValue: ArticleParagraphTranslationViewModel(
+                paragraph: word.sentence,
+                translator: translator
+            )
+        )
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(word.spelling)
-                    .font(.system(.headline, design: .serif).italic())
-                    .foregroundStyle(Color.readingTitle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: onToggle) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(word.spelling)
+                            .font(.system(.headline, design: .serif).italic())
+                            .foregroundStyle(Color.readingTitle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.readingTextTertiary)
+                    }
+
+                    Text(word.sentence)
+                        .font(.system(.subheadline, design: .serif))
+                        .foregroundStyle(
+                            isExpanded ? Color.readingTextPrimary : Color.readingTextSecondary
+                        )
+                        .lineLimit(isExpanded ? nil : 1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "收起 \(word.spelling)" : "展开 \(word.spelling)")
 
-            Text(word.sentence)
-                .font(.system(.body, design: .serif))
-                .foregroundStyle(isExpanded ? .primary : .secondary)
-                .lineLimit(isExpanded ? nil : 1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // 句子区域始终存在，折叠时只保留一行摘要，避免条件插入/移除导致单词跟着跳动。
-                .animation(expansionAnimation, value: isExpanded)
+            if isExpanded {
+                Rectangle()
+                    .fill(Color.readingRule)
+                    .frame(height: 1)
 
-            Text(isExpanded ? "点击收起例句" : "点击展开例句")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                HStack(spacing: ReadingSupplementActionMetrics.groupSpacing) {
+                    ReadingSupplementActionButton(
+                        presentation: supplementPresentation(for: .translation)
+                    ) {
+                        Task {
+                            await supplementViewModel.didTapTranslateButton()
+                        }
+                    }
+
+                    ReadingSupplementActionButton(
+                        presentation: supplementPresentation(for: .analysis)
+                    ) {
+                        Task {
+                            await supplementViewModel.didTapAnalyzeButton()
+                        }
+                    }
+                }
+
+                supplementContent
+            }
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             ReadingCardBackground()
+        }
+        .animation(expansionAnimation, value: isExpanded)
+    }
+
+    /// 将收藏页状态映射到全局统一的阅读辅助按钮展示模型。
+    private func supplementPresentation(for action: ReadingSupplementAction) -> ReadingSupplementActionPresentation {
+        let panel: ArticleParagraphExpansionPanel = action == .translation ? .translation : .analysis
+        let isLoading = supplementViewModel.loadingPanel == panel
+        return ReadingSupplementActionPresentation(
+            action: action,
+            isActive: supplementViewModel.expandedPanel == panel || isLoading,
+            isLoading: isLoading,
+            isDisabled: supplementViewModel.isLoading
+        )
+    }
+
+    @ViewBuilder
+    private var supplementContent: some View {
+        if supplementViewModel.isLoading {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(supplementViewModel.loadingPanel == .translation ? "翻译中…" : "解析中…")
+                    .font(.footnote)
+                    .foregroundStyle(Color.readingTextSecondary)
+            }
+            .padding(.top, 2)
+        } else if let text = expandedSupplementText {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Color.readingTextSecondary)
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.readingControlFill)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        } else if let error = supplementViewModel.error {
+            Label(error, systemImage: "exclamationmark.circle")
+                .font(.footnote)
+                .foregroundStyle(Color.readingError)
+        }
+    }
+
+    private var expandedSupplementText: String? {
+        switch supplementViewModel.expandedPanel {
+        case .translation:
+            return supplementViewModel.translation
+        case .analysis:
+            return supplementViewModel.analysis
+        case nil:
+            return nil
         }
     }
 }
@@ -135,11 +237,11 @@ private struct BookmarkSectionHeader: View {
 
             Text(dateLabel)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.readingTextSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .textCase(nil)
     }
 }

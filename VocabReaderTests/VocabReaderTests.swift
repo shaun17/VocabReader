@@ -93,6 +93,91 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertTrue(parsed.missingWords.isEmpty)
     }
 
+    func testArticleVocabularyMarkupParserRemovesMalformedVocabularyTagWithoutClosingAngle() {
+        let words = [
+            VocabWord(id: "1", spelling: "invitation"),
+            VocabWord(id: "2", spelling: "exit")
+        ]
+        let parsed = ArticleVocabularyMarkupParser().parse(
+            content: "A: The <vocab id=\"broken invitation changed the exit plan.",
+            targetWords: words
+        )
+
+        XCTAssertEqual(parsed.content, "A: The invitation changed the exit plan.")
+        XCTAssertFalse(parsed.content.contains("<vocab"))
+        XCTAssertEqual(parsed.missingWords.map(\.spelling), [])
+    }
+
+    /// LLM 即使额外给目标词加 Markdown 粗体，最终正文也不能泄漏星号，词汇范围仍要对齐清理后的文本。
+    func testArticleVocabularyMarkupParserRemovesMarkdownEmphasisAroundVocabularyMarker() {
+        let word = VocabWord(id: "phrase-1", spelling: "office table")
+        let parsed = ArticleVocabularyMarkupParser().parse(
+            content: "Pass me the **<vocab id=\"w1\">office table</vocab>** clutter.",
+            targetWords: [word],
+            markerWordByID: ["w1": word]
+        )
+
+        XCTAssertEqual(parsed.content, "Pass me the office table clutter.")
+        XCTAssertEqual(parsed.occurrences.map(\.surfaceText), ["office table"])
+        XCTAssertEqual(parsed.occurrences.first?.range, NSRange(location: 12, length: 12))
+        XCTAssertTrue(parsed.missingWords.isEmpty)
+    }
+
+    /// Markdown 粗体位于 vocab 标签内部时也要清理，避免模型标记顺序不同就污染阅读正文。
+    func testArticleVocabularyMarkupParserRemovesMarkdownEmphasisInsideVocabularyMarker() {
+        let word = VocabWord(id: "phrase-1", spelling: "office table")
+        let parsed = ArticleVocabularyMarkupParser().parse(
+            content: "Pass me the <vocab id=\"w1\">**office table**</vocab> clutter.",
+            targetWords: [word],
+            markerWordByID: ["w1": word]
+        )
+
+        XCTAssertEqual(parsed.content, "Pass me the office table clutter.")
+        XCTAssertEqual(parsed.occurrences.map(\.surfaceText), ["office table"])
+        XCTAssertEqual(parsed.occurrences.first?.range, NSRange(location: 12, length: 12))
+        XCTAssertTrue(parsed.missingWords.isEmpty)
+    }
+
+    /// 阅读辅助动作在展开前后保持稳定短文案，只通过视觉选中态和辅助功能标签表达“收起”。
+    func testReadingSupplementActionPresentationKeepsVisibleLabelsStableAcrossStates() {
+        let inactive = ReadingSupplementActionPresentation(
+            action: .translation,
+            isActive: false,
+            isLoading: false,
+            isDisabled: false
+        )
+        let active = ReadingSupplementActionPresentation(
+            action: .translation,
+            isActive: true,
+            isLoading: false,
+            isDisabled: false
+        )
+
+        XCTAssertEqual(inactive.title, "翻译")
+        XCTAssertEqual(active.title, "翻译")
+        XCTAssertEqual(inactive.accessibilityLabel, "翻译")
+        XCTAssertEqual(active.accessibilityLabel, "收起翻译")
+    }
+
+    /// 翻译和解析必须从共享语义模型取得固定图标，避免两个页面继续各自定义视觉语言。
+    func testReadingSupplementActionsUseSharedIcons() {
+        let translation = ReadingSupplementActionPresentation(
+            action: .translation,
+            isActive: false,
+            isLoading: false,
+            isDisabled: false
+        )
+        let analysis = ReadingSupplementActionPresentation(
+            action: .analysis,
+            isActive: false,
+            isLoading: false,
+            isDisabled: false
+        )
+
+        XCTAssertEqual(translation.systemImage, "character.book.closed")
+        XCTAssertEqual(analysis.systemImage, "text.magnifyingglass")
+    }
+
     func testArticleContentFormatterHandlesDuplicateTargetWordSpellings() {
         let article = Article(
             id: UUID(),
@@ -197,6 +282,27 @@ final class VocabReaderTests: XCTestCase {
 
         XCTAssertEqual(String(formatted.characters), article.content)
         XCTAssertEqual(linkedRuns.map(\.absoluteString), ["word://take%20off"])
+    }
+
+    /// 没有 LLM 标签时，本地兜底也要识别短语中的常见规则词形变化。
+    func testArticleContentFormatterMatchesRegularInflectionsInsidePhraseTargets() {
+        let article = Article(
+            id: UUID(),
+            scene: .novel,
+            content: "They are growing hemp, and several items on the agenda cover safety.",
+            targetWords: [
+                VocabWord(id: "phrase-1", spelling: "grow hemp"),
+                VocabWord(id: "phrase-2", spelling: "item on the agenda")
+            ]
+        )
+
+        let formatted = ArticleContentFormatter().format(article: article)
+        let linkedRuns = formatted.runs.compactMap(\.link)
+
+        XCTAssertEqual(
+            linkedRuns.map(\.absoluteString),
+            ["word://grow%20hemp", "word://item%20on%20the%20agenda"]
+        )
     }
 
     func testArticleParagraphExtractorCarriesMarkedOccurrencesIntoParagraphs() {

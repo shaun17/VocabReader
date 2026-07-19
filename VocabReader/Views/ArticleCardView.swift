@@ -10,7 +10,7 @@ struct ArticleCardView: View {
                 Label(article.topic.rawValue, systemImage: article.topic.systemImageName)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.readingTextSecondary)
 
             if !article.title.isEmpty {
                 Text(article.title)
@@ -21,11 +21,11 @@ struct ArticleCardView: View {
             Text(article.content)
                 .font(.system(.body, design: .serif))
                 .lineLimit(3)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.readingTextPrimary)
 
             Text("\(article.targetWords.count) 个词汇")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.readingTextTertiary)
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 16)

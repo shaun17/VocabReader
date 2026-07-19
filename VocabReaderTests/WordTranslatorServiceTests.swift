@@ -93,6 +93,98 @@ final class WordTranslatorServiceTests: XCTestCase {
         XCTAssertEqual(object["max_tokens"] as? Int, 240)
     }
 
+    /// DeepSeek 默认开启思考模式；翻译任务必须显式关闭，确保 token 预算用于最终译文。
+    func testTranslateParagraphDisablesThinkingForDeepSeek() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "完整译文。"}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-flash"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        _ = try await service.translate(paragraph: "A: We should start again.\nB: The deadline is tomorrow.")
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let thinking = try XCTUnwrap(object["thinking"] as? [String: Any])
+        XCTAssertEqual(thinking["type"] as? String, "disabled")
+    }
+
+    /// finish_reason=length 代表译文已截断，必须扩大输出预算重试，不能缓存半截内容。
+    func testTranslateParagraphRetriesTruncatedCompletionAndReturnsCompleteTranslation() async throws {
+        let truncatedJSON = """
+        {
+          "choices": [{"finish_reason": "length", "message": {"role": "assistant", "content": "A：我们可以放弃整个计划。这是个双"}}]
+        }
+        """
+        let completeJSON = """
+        {
+          "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "A：我们可以放弃整个计划，从头再来。这是一个双赢局面。\\nB：但截止日期是明天。"}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [
+            (Data(truncatedJSON.utf8), 200),
+            (Data(completeJSON.utf8), 200)
+        ])
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-flash"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        let translation = try await service.translate(
+            paragraph: "A: We could toss the whole plan and start fresh.\nB: But the deadline is tomorrow."
+        )
+
+        XCTAssertEqual(translation, "A：我们可以放弃整个计划，从头再来。这是一个双赢局面。\nB：但截止日期是明天。")
+        XCTAssertEqual(session.requests.count, 2)
+        let firstBody = try XCTUnwrap(session.requests.first?.httpBody)
+        let secondBody = try XCTUnwrap(session.requests.last?.httpBody)
+        let firstObject = try XCTUnwrap(JSONSerialization.jsonObject(with: firstBody) as? [String: Any])
+        let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondBody) as? [String: Any])
+        XCTAssertEqual(firstObject["max_tokens"] as? Int, 240)
+        XCTAssertEqual(secondObject["max_tokens"] as? Int, 480)
+    }
+
+    /// 兼容服务偶发返回 200 但正文为空的情况；一次重试成功后应恢复后续翻译和解析能力。
+    func testTranslateParagraphRetriesEmptyCompletion() async throws {
+        let emptyJSON = """
+        {
+          "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": ""}}]
+        }
+        """
+        let completeJSON = """
+        {
+          "choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "这是完整译文。"}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [
+            (Data(emptyJSON.utf8), 200),
+            (Data(completeJSON.utf8), 200)
+        ])
+        let config = LLMConfig(
+            apiKey: "key",
+            baseURL: "https://api.deepseek.com",
+            model: "deepseek-v4-flash"
+        )
+        let service = WordTranslatorService(config: config, session: session)
+
+        let translation = try await service.translate(paragraph: "This is a complete paragraph.")
+
+        XCTAssertEqual(translation, "这是完整译文。")
+        XCTAssertEqual(session.requests.count, 2)
+    }
+
     func testAnalyzeParagraphReturnsStructuredAnalysisContent() async throws {
         let json = """
         {

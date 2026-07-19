@@ -9,17 +9,30 @@ struct ArticleVocabularyMarkupParseResult {
 struct ArticleVocabularyMarkupParser {
     private static let markerPattern = #"<vocab\s+id="([^"]+)">([\s\S]*?)</vocab>"#
     private static let strayTagPattern = #"</?\s*vocab\b[^>]*>"#
+    private static let malformedOpeningTagPattern = #"<\s*vocab\b(?:\s+id="[^"\s>]*)?"#
+    private static let markdownEmphasisPatterns = [
+        #"\*\*([\s\S]*?)\*\*"#,
+        #"__([\s\S]*?)__"#
+    ]
 
     /// 解析 LLM 生成的内联词汇标记，返回去标签正文、命中范围和缺失目标词。
-    func parse(content: String, targetWords: [VocabWord]) -> ArticleVocabularyMarkupParseResult {
-        let targetWordByID = targetWords.reduce(into: [String: VocabWord]()) { result, word in
+    func parse(
+        content: String,
+        targetWords: [VocabWord],
+        markerWordByID: [String: VocabWord] = [:]
+    ) -> ArticleVocabularyMarkupParseResult {
+        var targetWordByID = targetWords.reduce(into: [String: VocabWord]()) { result, word in
             guard result[word.id] == nil else { return }
             result[word.id] = word
         }
-        let nsContent = content as NSString
+        markerWordByID.forEach { markerID, word in
+            targetWordByID[markerID] = word
+        }
+        let normalizedContent = removingMarkdownEmphasis(from: content)
+        let nsContent = normalizedContent as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
         let regex = try? NSRegularExpression(pattern: Self.markerPattern)
-        let matches = regex?.matches(in: content, range: fullRange) ?? []
+        let matches = regex?.matches(in: normalizedContent, range: fullRange) ?? []
 
         var cleanContent = ""
         var occurrences: [ArticleVocabularyOccurrence] = []
@@ -57,13 +70,22 @@ struct ArticleVocabularyMarkupParser {
         )
         occurrences.append(contentsOf: fallbackOccurrences)
 
-        // LLM 标记是最精确的词组证据；没给标记时，再用本地词形和精确词组匹配兜底，避免整批误判缺失。
+        // LLM 标记是最精确的词组证据；没给标记时，再用本地单词和短语词形匹配兜底，避免整批误判缺失。
         let missingWords = TargetWordMatcher.missingWords(in: cleanContent, targetWords: unmarkedWords)
         return ArticleVocabularyMarkupParseResult(
             content: cleanContent,
             occurrences: occurrences.sorted { $0.range.location < $1.range.location },
             missingWords: missingWords
         )
+    }
+
+    /// 清掉模型擅自添加的 Markdown 粗体标记，让正文和词汇 range 从解析开始就使用同一份干净文本。
+    private func removingMarkdownEmphasis(from content: String) -> String {
+        Self.markdownEmphasisPatterns.reduce(content) { current, pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return current }
+            let range = NSRange(location: 0, length: (current as NSString).length)
+            return regex.stringByReplacingMatches(in: current, range: range, withTemplate: "$1")
+        }
     }
 
     /// 把标记前的普通正文原样追加到最终正文，保证非词汇文本不丢失。
@@ -118,10 +140,20 @@ struct ArticleVocabularyMarkupParser {
 
     /// 清理没有成对命中的残留 vocab 标签，避免模型输出半截标签时污染正文。
     private func sanitizedUnmarkedText(_ text: String) -> String {
-        text.replacingOccurrences(
+        let withoutClosedStrayTags = text.replacingOccurrences(
             of: Self.strayTagPattern,
             with: "",
             options: [.regularExpression, .caseInsensitive]
+        )
+        let withoutMalformedOpeningTags = withoutClosedStrayTags.replacingOccurrences(
+            of: Self.malformedOpeningTagPattern,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        return withoutMalformedOpeningTags.replacingOccurrences(
+            of: #" {2,}"#,
+            with: " ",
+            options: [.regularExpression]
         )
     }
 }

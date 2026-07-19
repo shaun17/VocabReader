@@ -6,11 +6,22 @@ struct VocabReaderApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if settings.isConfigured {
-                TodayView()
-            } else {
-                SettingsView(settings: settings)
+            Group {
+                if settings.isConfigured {
+                    TodayView()
+                } else {
+                    SettingsView(
+                        settings: settings,
+                        showsCancelButton: false
+                    )
+                }
             }
+            .background {
+                AppAppearanceWindowBridge(appearance: settings.appearance)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .tint(Color.readingTitle)
         }
     }
 

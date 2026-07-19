@@ -1,8 +1,8 @@
 import Foundation
 
 enum ArticleGenerationLimits {
-    static let articleWordCountRange = 10...200
-    static let wordsPerArticleRange = 5...50
+    static let articleWordCountRange = 10...500
+    static let wordsPerArticleRange = 5...30
     static let articleWordCountStep = 10
     static let wordsPerArticleStep = 5
 

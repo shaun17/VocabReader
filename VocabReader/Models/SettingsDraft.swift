@@ -9,6 +9,7 @@ struct SettingsDraft: Equatable {
     var wordsPerArticle: Int
     var selectedTopic: ArticleTopic
     var enabledScenes: [ArticleScene]
+    var appearance: AppAppearance = .system
 
     var isConfigured: Bool {
         !maiMemoToken.isEmpty &&

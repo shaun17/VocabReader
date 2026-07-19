@@ -10,6 +10,9 @@ protocol ArticleParagraphTranslatorProtocol {
 }
 
 final class WordTranslatorService {
+    private static let textRequestMaxAttempts = 2
+    private static let maximumRetryTokenLimit = 4_096
+
     private let config: LLMConfig
     private let session: URLSessionProtocol
 
@@ -68,8 +71,45 @@ final class WordTranslatorService {
         return Self.formattedParagraphAnalysis(from: rawAnalysis)
     }
 
-    /// 发送通用 LLM 文本请求，供查词、段落翻译和段落解析复用。
+    /// 发送通用 LLM 文本请求；截断、空正文和资源中断只允许受控重试一次。
     private func performLLMTextRequest(prompt: String, maxTokens: Int) async throws -> String {
+        var currentMaxTokens = maxTokens
+        var lastRetryableError = LLMError.noChoices
+
+        for _ in 0..<Self.textRequestMaxAttempts {
+            let choice = try await requestLLMTextCompletion(
+                prompt: prompt,
+                maxTokens: currentMaxTokens
+            )
+
+            switch choice.finishReason {
+            case "length":
+                lastRetryableError = .responseTruncated
+                currentMaxTokens = min(currentMaxTokens * 2, Self.maximumRetryTokenLimit)
+                continue
+            case "insufficient_system_resource":
+                lastRetryableError = .temporarilyUnavailable
+                continue
+            case "content_filter":
+                throw LLMError.contentFiltered
+            case "tool_calls":
+                throw LLMError.invalidResponse
+            default:
+                let content = choice.message.content?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard content.isEmpty else { return content }
+                lastRetryableError = .noChoices
+            }
+        }
+
+        throw lastRetryableError
+    }
+
+    /// 执行单次兼容 OpenAI 协议的请求，并保留 finish_reason 供上层判断响应是否完整。
+    private func requestLLMTextCompletion(
+        prompt: String,
+        maxTokens: Int
+    ) async throws -> ChatCompletionResponse.Choice {
         let base = config.baseURL.hasSuffix("/") ? String(config.baseURL.dropLast()) : config.baseURL
         guard let url = URL(string: "\(base)/chat/completions") else {
             throw LLMError.invalidResponse
@@ -88,7 +128,7 @@ final class WordTranslatorService {
                 ["role": "user", "content": prompt]
             ]
         ]
-        if config.usesKimiCompatibilityMode {
+        if config.shouldDisableThinking {
             body["thinking"] = ["type": "disabled"]
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -107,12 +147,10 @@ final class WordTranslatorService {
         }
 
         let decoded = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
-        guard let content = decoded.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !content.isEmpty else {
+        guard let choice = decoded.choices.first else {
             throw LLMError.noChoices
         }
-
-        return content
+        return choice
     }
 }
 

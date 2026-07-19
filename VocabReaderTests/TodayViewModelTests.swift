@@ -395,6 +395,47 @@ final class TodayViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.articles.map(\.content), ["first", "second", "third", "fourth"])
         XCTAssertNil(viewModel.error)
     }
+
+    /// 用户重试加载时应立即清掉旧错误，不能在新请求进行中同时显示“生成失败”和加载动画。
+    func testLoadMoreClearsPreviousErrorBeforeRetryFinishes() async {
+        let initialArticles = (1...3).map { index in
+            Article(
+                id: UUID(),
+                scene: .novel,
+                content: "article\(index)",
+                targetWords: [VocabWord(id: "\(index)", spelling: "word\(index)")]
+            )
+        }
+        let retryArticle = Article(
+            id: UUID(),
+            scene: .science,
+            content: "retried",
+            targetWords: [VocabWord(id: "4", spelling: "word4")]
+        )
+        let pagingSession = BlockingRetryPagingSession(
+            initialArticles: initialArticles,
+            retryArticle: retryArticle
+        )
+        let viewModel = TodayViewModel {
+            FixedPagingGenerator(session: pagingSession)
+        }
+
+        await viewModel.loadArticles()
+        viewModel.setLoadMoreFooterVisible(true)
+        await viewModel.loadMoreIfNeededForListTail()
+        XCTAssertNotNil(viewModel.error)
+
+        let retryTask = Task {
+            await viewModel.loadMoreIfNeededForListTail()
+        }
+        await pagingSession.waitUntilRetryStarts()
+
+        XCTAssertNil(viewModel.error)
+        XCTAssertTrue(viewModel.isLoadingMore)
+
+        await pagingSession.resumeRetry()
+        await retryTask.value
+    }
 }
 
 @MainActor
@@ -578,6 +619,63 @@ private actor TransientLoadMoreFailurePagingSession: TodayArticlePagingSession {
         guard !didReturnRetryArticle else { return nil }
         didReturnRetryArticle = true
         return retryArticle
+    }
+}
+
+/// 第一次加载更多失败、第二次阻塞到测试放行，用来观察重试进行中的页面状态。
+private actor BlockingRetryPagingSession: TodayArticlePagingSession {
+    private var initialArticles: [Article]
+    private let retryArticle: Article
+    private var didFailLoadMore = false
+    private var didReturnRetryArticle = false
+    private var retryStarted = false
+    private var retryStartedContinuation: CheckedContinuation<Void, Never>?
+    private var retryResumeContinuation: CheckedContinuation<Void, Never>?
+
+    init(initialArticles: [Article], retryArticle: Article) {
+        self.initialArticles = initialArticles
+        self.retryArticle = retryArticle
+    }
+
+    /// 只要初始文章或重试文章尚未返回，分页就仍可继续。
+    func hasMoreArticles() async throws -> Bool {
+        !initialArticles.isEmpty || !didReturnRetryArticle
+    }
+
+    /// 初始三篇正常返回，第四次抛错，第五次等待测试检查 UI 状态后再成功。
+    func loadNextArticle() async throws -> Article? {
+        if !initialArticles.isEmpty {
+            return initialArticles.removeFirst()
+        }
+
+        if !didFailLoadMore {
+            didFailLoadMore = true
+            throw TodayViewModelTestError.transientNetwork
+        }
+
+        guard !didReturnRetryArticle else { return nil }
+        retryStarted = true
+        retryStartedContinuation?.resume()
+        retryStartedContinuation = nil
+        await withCheckedContinuation { continuation in
+            retryResumeContinuation = continuation
+        }
+        didReturnRetryArticle = true
+        return retryArticle
+    }
+
+    /// 等待第二次加载更多真正进入阻塞点，避免测试和异步请求竞态。
+    func waitUntilRetryStarts() async {
+        guard !retryStarted else { return }
+        await withCheckedContinuation { continuation in
+            retryStartedContinuation = continuation
+        }
+    }
+
+    /// 放行被阻塞的重试请求，使测试能够正常收尾。
+    func resumeRetry() {
+        retryResumeContinuation?.resume()
+        retryResumeContinuation = nil
     }
 }
 

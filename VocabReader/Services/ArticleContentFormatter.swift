@@ -89,7 +89,7 @@ struct ArticleContentFormatter {
     /// 构造可点击的目标词片段，URL host 做百分号编码以支持空格词组。
     private func linkedSpan(text: String, word: VocabWord) -> AttributedString {
         var span = AttributedString(text)
-        span.foregroundColor = .accentColor
+        span.foregroundColor = .readingTitle
         span.underlineStyle = .single
         span.link = wordURL(for: word)
         return span
@@ -200,19 +200,15 @@ struct TargetWordMatcher {
         }
     }
 
-    /// 对空格词组做大小写不敏感的精确短语匹配；不推断不规则变化，变化词组仍依赖 LLM 标记。
+    /// 对空格词组做大小写不敏感的逐词词形匹配；不规则变化仍依赖 LLM 标记。
     private func exactPhraseOccurrences(in content: String, excluding excludedRanges: [NSRange] = []) -> [ArticleVocabularyOccurrence] {
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
 
         return targetWords.flatMap { word in
-            let parts = word.spelling
-                .split(whereSeparator: { $0.isWhitespace })
-                .map(String.init)
-            guard parts.count > 1 else { return [ArticleVocabularyOccurrence]() }
-
-            let escapedParts = parts.map { NSRegularExpression.escapedPattern(for: $0) }
-            let pattern = #"(?<![A-Za-z])"# + escapedParts.joined(separator: #"\s+"#) + #"(?![A-Za-z])"#
+            guard let pattern = Self.phrasePattern(for: word.spelling) else {
+                return [ArticleVocabularyOccurrence]()
+            }
             let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
             let matches = regex?.matches(in: content, range: fullRange) ?? []
 
@@ -226,6 +222,31 @@ struct TargetWordMatcher {
                 )
             }
         }
+    }
+
+    /// 为短语的每个组成词生成可接受词形，支持 grow hemp -> growing hemp、item -> items 等规则变化。
+    private static func phrasePattern(for spelling: String) -> String? {
+        let parts = spelling
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+        guard parts.count > 1 else { return nil }
+
+        let partPatterns = parts.map { part -> String in
+            let normalizedPart = normalizedToken(part)
+            let escapedForms = acceptedForms(for: normalizedPart)
+                .sorted { lhs, rhs in
+                    if lhs.count == rhs.count { return lhs < rhs }
+                    return lhs.count > rhs.count
+                }
+                .map(NSRegularExpression.escapedPattern(for:))
+
+            guard escapedForms.count > 1 else {
+                return escapedForms.first ?? NSRegularExpression.escapedPattern(for: normalizedPart)
+            }
+            return "(?:\(escapedForms.joined(separator: "|")))"
+        }
+
+        return #"(?<![A-Za-z])"# + partPatterns.joined(separator: #"\s+"#) + #"(?![A-Za-z])"#
     }
 
     /// 从正文中提取英文 token，保持和高亮器相同的分词边界。

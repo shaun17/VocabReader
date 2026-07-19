@@ -151,143 +151,50 @@ final class ArticleGeneratorTests: XCTestCase {
         )
     }
 
-    func testPagingSessionComposesSingleArticleAfterMissingVocabularyFailure() async throws {
+    /// 缺词失败应由 LLMService 整体重写处理，分页层不能把多个独立片段拼成一篇假文章。
+    func testPagingSessionDoesNotComposeDisconnectedFragmentsAfterMissingVocabularyFailure() async throws {
         let collector = BatchCollector()
-        let mockLLM = MockLLMService { words, scene, topic in
+        let mockLLM = MockLLMService { words, _, _ in
             await collector.append(words)
-            if words.count > 3 {
-                throw LLMError.missingVocabularyWords(words.map(\.spelling))
-            }
-
-            return Article(
-                id: UUID(),
-                scene: scene,
-                topic: topic,
-                content: words.map(\.spelling).joined(separator: " "),
-                targetWords: words
-            )
+            throw LLMError.missingVocabularyWords(words.map(\.spelling))
         }
         let words = (1...6).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
         let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, batchSize: 6)
         let session = generator.makePagingSession()
 
-        let firstArticle = try await session.loadNextArticle()
-        let secondArticle = try await session.loadNextArticle()
-
-        XCTAssertEqual(firstArticle?.targetWords.map(\.spelling), words.map(\.spelling))
-        XCTAssertEqual(firstArticle?.content, "word1 word2 word3\n\nword4 word5 word6")
-        XCTAssertNil(secondArticle)
+        do {
+            _ = try await session.loadNextArticle()
+            XCTFail("缺词失败时不应拆分生成并拼接成一篇上下文断裂的文章")
+        } catch LLMError.missingVocabularyWords(let missingWords) {
+            XCTAssertEqual(missingWords, words.map(\.spelling))
+        }
 
         let capturedBatches = await collector.batches.map { $0.map(\.spelling) }
-        XCTAssertEqual(
-            capturedBatches,
-            [
-                ["word1", "word2", "word3", "word4", "word5", "word6"],
-                ["word1", "word2", "word3"],
-                ["word4", "word5", "word6"]
-            ]
-        )
+        XCTAssertEqual(capturedBatches, [words.map(\.spelling)])
     }
 
-    func testPagingSessionAddsReadableTitleWhenComposedFragmentsHaveNoTitle() async throws {
-        let mockLLM = MockLLMService { words, scene, topic in
-            if words.count > 2 {
-                throw LLMError.missingVocabularyWords(words.map(\.spelling))
-            }
-
-            return Article(
-                id: UUID(),
-                scene: scene,
-                topic: topic,
-                content: words.map(\.spelling).joined(separator: " "),
-                targetWords: words
-            )
-        }
-        let words = (1...4).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
-        let mockMaiMemo = MockMaiMemoService(words: words)
-        let generator = ArticleGenerator(
-            maiMemo: mockMaiMemo,
-            llm: mockLLM,
-            batchSize: 4,
-            scenes: [.dialogue],
-            topic: .customer
-        )
-        let session = generator.makePagingSession()
-
-        let article = try await session.loadNextArticle()
-
-        XCTAssertEqual(article?.title, "客户对话")
-    }
-
-    func testPagingSessionKeepsFirstGeneratedTitleWhenComposingArticle() async throws {
-        let mockLLM = MockLLMService { words, scene, topic in
-            if words.count > 2 {
-                throw LLMError.missingVocabularyWords(words.map(\.spelling))
-            }
-
-            return Article(
-                id: UUID(),
-                scene: scene,
-                topic: topic,
-                title: words.first?.spelling == "word1" ? "A Customer Reset" : "A Later Fragment",
-                content: words.map(\.spelling).joined(separator: " "),
-                targetWords: words
-            )
-        }
-        let words = (1...4).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
-        let mockMaiMemo = MockMaiMemoService(words: words)
-        let generator = ArticleGenerator(
-            maiMemo: mockMaiMemo,
-            llm: mockLLM,
-            batchSize: 4,
-            scenes: [.dialogue],
-            topic: .customer
-        )
-        let session = generator.makePagingSession()
-
-        let article = try await session.loadNextArticle()
-
-        XCTAssertEqual(article?.title, "A Customer Reset")
-    }
-
-    func testPagingSessionComposesSingleArticleAfterTimeoutFailure() async throws {
+    /// 超时也不能拆成多个独立片段拼接；保留完整批次错误，交给用户重试。
+    func testPagingSessionPropagatesTimeoutWithoutSplittingBatch() async throws {
         let collector = BatchCollector()
-        let mockLLM = MockLLMService { words, scene, topic in
+        let mockLLM = MockLLMService { words, _, _ in
             await collector.append(words)
-            if words.count > 1 {
-                throw LLMError.requestTimedOut(45)
-            }
-
-            return Article(
-                id: UUID(),
-                scene: scene,
-                topic: topic,
-                content: words.map(\.spelling).joined(separator: " "),
-                targetWords: words
-            )
+            throw LLMError.requestTimedOut(45)
         }
         let words = (1...2).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
         let mockMaiMemo = MockMaiMemoService(words: words)
         let generator = ArticleGenerator(maiMemo: mockMaiMemo, llm: mockLLM, batchSize: 2)
         let session = generator.makePagingSession()
 
-        let firstArticle = try await session.loadNextArticle()
-        let secondArticle = try await session.loadNextArticle()
-
-        XCTAssertEqual(firstArticle?.targetWords.map(\.spelling), ["word1", "word2"])
-        XCTAssertEqual(firstArticle?.content, "word1\n\nword2")
-        XCTAssertNil(secondArticle)
+        do {
+            _ = try await session.loadNextArticle()
+            XCTFail("超时时不应拆分生成并拼接成一篇上下文断裂的文章")
+        } catch LLMError.requestTimedOut(let timeout) {
+            XCTAssertEqual(timeout, 45)
+        }
 
         let capturedBatches = await collector.batches.map { $0.map(\.spelling) }
-        XCTAssertEqual(
-            capturedBatches,
-            [
-                ["word1", "word2"],
-                ["word1"],
-                ["word2"]
-            ]
-        )
+        XCTAssertEqual(capturedBatches, [["word1", "word2"]])
     }
 
     func testUsesConfiguredScenesAndTopicWhenGeneratingArticles() async throws {

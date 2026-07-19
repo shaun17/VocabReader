@@ -66,6 +66,57 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(bodyString.contains("serendipity"), "Prompt must include word spelling")
     }
 
+    /// Prompt 只给模型短标记 ID，避免真实词条 ID 太长导致模型截断标签。
+    func testGenerateArticleUsesShortPromptMarkerIDsInsteadOfRawVocabularyIDs() async throws {
+        var capturedRequest: URLRequest?
+        let rawID = "voc-_X-2dtZKRf8cahiUUxNfB0SLDj0E0vyPwqFyoHobCggMFYWZQ0SUOcK5AMZr8ix"
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Customer Plan\\n\\nThe <vocab id=\\"w1\\">invitation</vocab> changed the meeting."}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: rawID, spelling: "invitation")],
+            scene: .dialogue,
+            topic: .customer
+        )
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("id=w1, word=invitation"))
+        XCTAssertFalse(bodyString.contains(rawID))
+        XCTAssertEqual(article.vocabularyOccurrences.first?.word.id, rawID)
+    }
+
+    /// 短标记 ID 必须能映射回真实词条，尤其是本地无法从词形推断的短语变形。
+    func testGenerateArticleMapsShortPromptMarkerIDsBackToPhraseWords() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Flight Practice\\n\\nThe plane <vocab id=\\"w1\\">took off</vocab> after sunrise."}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [(Data(json.utf8), 200)])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: "raw-phrase-id-that-model-should-not-copy", spelling: "take off")],
+            scene: .novel,
+            topic: .general
+        )
+
+        XCTAssertEqual(article.content, "The plane took off after sunrise.")
+        XCTAssertEqual(article.vocabularyOccurrences.first?.surfaceText, "took off")
+        XCTAssertEqual(article.vocabularyOccurrences.first?.word.spelling, "take off")
+        XCTAssertEqual(session.requests.count, 1)
+    }
+
     func testPromptAllowsNaturalInflectedFormsInsteadOfForcingOriginalSpelling() async throws {
         var capturedRequest: URLRequest?
         let json = """
@@ -91,7 +142,8 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertFalse(bodyString.contains("Each word must appear in its original spelling"))
     }
 
-    func testPromptAddsEnoughContextForLargeVocabularyBatches() async throws {
+    /// 大批次分段生成时，续写 Prompt 必须带上前文和同一篇文章约束。
+    func testPromptAddsEnoughContextForLargeVocabularySections() async throws {
         var capturedRequest: URLRequest?
         let spellings = [
             "apple", "banana", "carrot", "dragon", "engine", "forest", "garden", "harbor", "island", "jacket",
@@ -119,9 +171,194 @@ final class LLMServiceTests: XCTestCase {
 
         let body = try XCTUnwrap(capturedRequest?.httpBody)
         let bodyString = String(data: body, encoding: .utf8) ?? ""
-        XCTAssertTrue(bodyString.contains("Write around 220-320 English words"))
-        XCTAssertTrue(bodyString.contains("Spread the vocabulary across the whole article"))
-        XCTAssertTrue(bodyString.contains("Do not turn the article into a vocabulary checklist"))
+        XCTAssertTrue(bodyString.contains("Continue the same article with Section 3 of 3"))
+        XCTAssertTrue(bodyString.contains("This is one article split into 3 connected generation steps"))
+        XCTAssertTrue(bodyString.contains("The full article will cover 30 target vocabulary items"))
+        XCTAssertTrue(bodyString.contains("Write around 70-110 English words for this closing section"))
+        XCTAssertTrue(bodyString.contains("Do not restart, summarize, or switch topics between sections"))
+        XCTAssertTrue(bodyString.contains("Previous article content:"))
+        XCTAssertTrue(bodyString.contains("Do not write isolated example sentences"))
+        XCTAssertTrue(bodyString.contains("Do not use Markdown emphasis"))
+        XCTAssertTrue(bodyString.contains("Only the CURRENT SECTION items are coverage requirements"))
+    }
+
+    /// 30 词批次要拆成同一篇文章的连续段落生成，避免一次性塞给模型后整批漏词。
+    func testGenerateArticleUsesLinkedSectionsForThirtyWordBatches() async throws {
+        let spellings = [
+            "apple", "banana", "carrot", "dragon", "engine", "forest", "garden", "harbor", "island", "jacket",
+            "kitten", "ladder", "market", "needle", "orange", "planet", "quartz", "river", "silver", "ticket",
+            "umbrella", "valley", "window", "yellow", "zebra", "anchor", "bridge", "circle", "dinner", "energy"
+        ]
+        let words = spellings.enumerated().map { index, spelling in
+            VocabWord(id: "\(index + 1)", spelling: spelling)
+        }
+        let responses = [
+            "Linked Case - Section 1\\n\\nA: \(taggedWords(words[0..<10])) opened the same problem.",
+            "B: \(taggedWords(words[10..<20])) made the decision harder.",
+            "A: \(taggedWords(words[20..<30])) finally shaped the outcome."
+        ].map { content in
+            """
+            {
+              "choices": [{"message": {"role": "assistant", "content": "\(content)"}}]
+            }
+            """
+        }
+        let session = QueueingMockSession(responses: responses.map { (Data($0.utf8), 200) })
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(words: words, scene: .dialogue, topic: .general)
+
+        XCTAssertEqual(article.title, "Linked Case")
+        XCTAssertEqual(article.vocabularyOccurrences.count, 30)
+        XCTAssertEqual(session.requests.count, 3)
+
+        let firstPrompt = try requestPrompt(session.requests[0])
+        XCTAssertTrue(firstPrompt.contains("Section 1 of 3"))
+        XCTAssertTrue(firstPrompt.contains("word=apple"))
+        XCTAssertTrue(firstPrompt.contains("Full-article vocabulary map"))
+        XCTAssertTrue(firstPrompt.contains("word=kitten"))
+        XCTAssertTrue(firstPrompt.contains("word=umbrella"))
+
+        let secondPrompt = try requestPrompt(session.requests[1])
+        XCTAssertTrue(secondPrompt.contains("Continue the same article"))
+        XCTAssertTrue(secondPrompt.contains("A: apple, banana"))
+        XCTAssertTrue(secondPrompt.contains("word=kitten"))
+        XCTAssertTrue(secondPrompt.contains("word=umbrella"))
+    }
+
+    /// 分段合并后要保留每段已解析出的短语命中，不能重新扫正文导致变形短语丢失。
+    func testGenerateArticleKeepsMarkedPhraseOccurrencesWhenMergingSections() async throws {
+        let words = [VocabWord(id: "phrase-raw-id", spelling: "take off")] +
+            (2...21).map { VocabWord(id: "raw-\($0)", spelling: "word\($0)") }
+        let responses = [
+            "Linked Flight\\n\\nThe plane <vocab id=\\\"w1\\\">took off</vocab> while \(taggedAliasWords(words[1..<10], startIndex: 2)) shaped the same plan.",
+            "Then \(taggedAliasWords(words[10..<20], startIndex: 11)) kept the team aligned.",
+            "Finally <vocab id=\\\"w21\\\">word21</vocab> closed the same decision."
+        ].map { content in
+            """
+            {
+              "choices": [{"message": {"role": "assistant", "content": "\(content)"}}]
+            }
+            """
+        }
+        let session = QueueingMockSession(responses: responses.map { (Data($0.utf8), 200) })
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(words: words, scene: .novel, topic: .general)
+
+        XCTAssertEqual(article.vocabularyOccurrences.count, 21)
+        XCTAssertEqual(article.vocabularyOccurrences.first?.word.spelling, "take off")
+        XCTAssertEqual(article.vocabularyOccurrences.first?.surfaceText, "took off")
+        XCTAssertFalse(article.content.contains("To keep the same situation moving"))
+        XCTAssertEqual(session.requests.count, 3)
+    }
+
+    /// 分段缺词重试只能重写当前段，不能让模型返回整篇正文后再次拼进前文。
+    func testSectionRetryPromptRequestsOnlyTheCorrectedCurrentSection() async throws {
+        let words = (1...21).map { VocabWord(id: "raw-\($0)", spelling: "word\($0)") }
+        let responses = [
+            "Linked Plan\\n\\n\(taggedAliasWords(words[0..<9], startIndex: 1))",
+            "Linked Plan\\n\\n\(taggedAliasWords(words[0..<10], startIndex: 1))",
+            taggedAliasWords(words[10..<20], startIndex: 11),
+            "<vocab id=\\\"w21\\\">word21</vocab>"
+        ].map { content in
+            """
+            {
+              "choices": [{"message": {"role": "assistant", "content": "\(content)"}}]
+            }
+            """
+        }
+        let session = QueueingMockSession(responses: responses.map { (Data($0.utf8), 200) })
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: words, scene: .novel, topic: .general)
+
+        let retryPrompt = try requestPrompt(session.requests[1])
+        XCTAssertTrue(retryPrompt.contains("Return the full corrected section"))
+        XCTAssertTrue(retryPrompt.contains("Do not repeat previous article content"))
+        XCTAssertFalse(retryPrompt.contains("Return the full corrected article"))
+    }
+
+    /// 确保 Prompt 把短文定义成一条连续主线，而不是一组互不相干的例句。
+    func testPromptRequiresSingleCoherentThroughLineAcrossTheWholeArticle() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Workshop Plan\\n\\nThe <vocab id=\\"1\\">mentor</vocab> explained why the quiet <vocab id=\\"2\\">river</vocab> mattered to the design."}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(
+            words: [
+                VocabWord(id: "1", spelling: "mentor"),
+                VocabWord(id: "2", spelling: "river")
+            ],
+            scene: .science,
+            topic: .general
+        )
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("Use one central through-line from beginning to end"))
+        XCTAssertTrue(bodyString.contains("Every sentence, paragraph, or dialogue turn must follow from the previous one"))
+        XCTAssertTrue(bodyString.contains("Do not write isolated example sentences"))
+    }
+
+    /// 学习短文必须优先使用真实交流中常见、自然的现代英语，不能为了塞词写生硬句式。
+    func testPromptRequiresCommonNaturalEnglishAndIdiomaticWordUse() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "A Clear Choice\\n\\nThe <vocab id=\\"w1\\">choice</vocab> felt natural in the conversation."}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(
+            words: [VocabWord(id: "1", spelling: "choice")],
+            scene: .novel,
+            topic: .general
+        )
+
+        let prompt = try requestPrompt(XCTUnwrap(capturedRequest))
+        XCTAssertTrue(prompt.contains("common in contemporary everyday English"))
+        XCTAssertTrue(prompt.contains("natural collocations and sentence patterns"))
+        XCTAssertTrue(prompt.contains("Never distort the meaning or grammar just to include a target word"))
+    }
+
+    /// 确保对话不是一问一答或一方附和，而是双方都推动同一个场景。
+    func testDialoguePromptRequiresBothSpeakersToDriveTheSameConversation() async throws {
+        var capturedRequest: URLRequest?
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Team Talk\\n\\nA: The <vocab id=\\"1\\">feedback</vocab> changed our plan."}}]
+        }
+        """
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) {
+            capturedRequest = $0
+        }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "feedback")], scene: .dialogue, topic: .customer)
+
+        let body = try XCTUnwrap(capturedRequest?.httpBody)
+        let bodyString = String(data: body, encoding: .utf8) ?? ""
+        XCTAssertTrue(bodyString.contains("Both speakers must actively drive the conversation"))
+        XCTAssertTrue(bodyString.contains("Do not make one speaker only ask questions while the other only agrees"))
+        XCTAssertTrue(bodyString.contains("Keep the conversation on the same topic; do not abruptly switch subjects"))
     }
 
     func testGenerateArticleRetriesWhenResponseMissesRequiredWords() async throws {
@@ -157,6 +394,77 @@ final class LLMServiceTests: XCTestCase {
         let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
         let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
         XCTAssertTrue(retryPrompt.contains("Missing vocabulary words from the previous draft: river"))
+    }
+
+    /// 缺词重试必须带上上一版正文，避免模型每次从零开始又丢掉已经覆盖的词。
+    func testGenerateArticleRetryPromptIncludesPreviousDraftForRepair() async throws {
+        let firstJSON = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\nThe <vocab id=\\"1\\">apple</vocab> stayed on the desk."}}]
+        }
+        """
+        let secondJSON = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Complete Draft\\n\\nThe <vocab id=\\"1\\">apple</vocab> stayed beside the <vocab id=\\"2\\">river</vocab>."}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [
+            (Data(firstJSON.utf8), 200),
+            (Data(secondJSON.utf8), 200)
+        ])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(
+            words: [
+                VocabWord(id: "1", spelling: "apple"),
+                VocabWord(id: "2", spelling: "river")
+            ],
+            scene: .novel,
+            topic: .general
+        )
+
+        let secondBody = try XCTUnwrap(session.requests.last?.httpBody)
+        let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondBody) as? [String: Any])
+        let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
+        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        XCTAssertTrue(retryPrompt.contains("Revise this previous draft"))
+        XCTAssertTrue(retryPrompt.contains("The apple stayed on the desk."))
+    }
+
+    /// 大批次也必须基于同一篇草稿修订，避免拆成互不相关的片段后再拼接。
+    func testGenerateArticleRetriesSameDraftForLargeBatchesWhenWordsAreMissing() async throws {
+        let words = (1...6).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let firstJSON = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\n<vocab id=\\"1\\">word1</vocab> leads the plan."}}]
+        }
+        """
+        let secondBody = words
+            .map { "<vocab id=\\\"\($0.id)\\\">\($0.spelling)</vocab>" }
+            .joined(separator: " ")
+        let secondJSON = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Complete Draft\\n\\n\(secondBody)"}}]
+        }
+        """
+        let session = QueueingMockSession(responses: [
+            (Data(firstJSON.utf8), 200),
+            (Data(secondJSON.utf8), 200)
+        ])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(words: words, scene: .novel, topic: .general)
+
+        XCTAssertEqual(article.title, "Complete Draft")
+        XCTAssertEqual(session.requests.count, 2)
+        let secondRequestBody = try XCTUnwrap(session.requests.last?.httpBody)
+        let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondRequestBody) as? [String: Any])
+        let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
+        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        XCTAssertTrue(retryPrompt.contains("Revise this previous draft"))
+        XCTAssertTrue(retryPrompt.contains("word1 leads the plan"))
     }
 
     func testGenerateArticleAcceptsInflectedTargetWordForms() async throws {
@@ -337,7 +645,8 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(retryPrompt.contains("Missing vocabulary words from the previous draft: take off"))
     }
 
-    func testGenerateArticleStopsAfterOneMissingAttemptForLargeBatches() async throws {
+    /// 连续缺词时宁可明确失败，也不能在正文末尾追加与上下文无关的模板句硬塞词汇。
+    func testGenerateArticleRejectsDisconnectedLocalCoverageRepairAfterRetryLimit() async throws {
         let json = """
         {
           "choices": [{"message": {"role": "assistant", "content": "Draft\\n\\nThis draft does not contain the requested vocabulary."}}]
@@ -347,16 +656,52 @@ final class LLMServiceTests: XCTestCase {
         let session = QueueingMockSession(responses: responses)
         let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
         let service = LLMService(config: config, session: session)
-        let words = (1...6).map { VocabWord(id: "\($0)", spelling: "word\($0)") }
+        let spellings = ["apple", "river", "cliff", "observe", "variety", "deficit"]
+        let words = spellings.enumerated().map { index, spelling in
+            VocabWord(id: "\(index + 1)", spelling: spelling)
+        }
 
         do {
             _ = try await service.generateArticle(words: words, scene: .novel, topic: .general)
-            XCTFail("大批次缺词时应尽快抛出，让 ArticleGenerator 拆分批次")
+            XCTFail("连续缺词后不应返回本地模板补句拼成的文章")
         } catch LLMError.missingVocabularyWords(let missingWords) {
-            XCTAssertEqual(missingWords, words.map(\.spelling))
+            XCTAssertEqual(missingWords, spellings)
         }
+        XCTAssertEqual(session.requests.count, 3)
+    }
 
-        XCTAssertEqual(session.requests.count, 1)
+    /// 后续重试偶发退化时，最终错误必须报告覆盖率最高草稿的缺词，不能用最后一版覆盖真实进展。
+    func testGenerateArticleReportsMissingWordsFromBestRetryDraft() async throws {
+        let responses = [
+            "Draft One\\n\\nThe apple stayed on the desk.",
+            "Draft Two\\n\\nThe apple stood beside the river.",
+            "Draft Three\\n\\nThe desk was empty."
+        ].map { content in
+            """
+            {
+              "choices": [{"message": {"role": "assistant", "content": "\(content)"}}]
+            }
+            """
+        }
+        let session = QueueingMockSession(
+            responses: responses.map { (Data($0.utf8), 200) }
+        )
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+        let words = [
+            VocabWord(id: "1", spelling: "apple"),
+            VocabWord(id: "2", spelling: "river"),
+            VocabWord(id: "3", spelling: "cliff")
+        ]
+
+        do {
+            _ = try await service.generateArticle(words: words, scene: .novel, topic: .general)
+            XCTFail("三次草稿都缺词时应明确失败")
+        } catch LLMError.missingVocabularyWords(let missingWords) {
+            XCTAssertEqual(missingWords, ["cliff"])
+        } catch {
+            XCTFail("收到非预期错误：\(error)")
+        }
     }
 
     func testGenerateArticleCapsRequestTimeoutForInteractiveGeneration() async throws {
@@ -405,7 +750,7 @@ final class LLMServiceTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         let thinking = try XCTUnwrap(object["thinking"] as? [String: Any])
         XCTAssertEqual(thinking["type"] as? String, "disabled")
-        XCTAssertEqual(object["max_tokens"] as? Int, 900)
+        XCTAssertEqual(object["max_tokens"] as? Int, 1600)
     }
 
     func testConnectionAllowsEnoughOutputTokensForReasoningModels() async throws {
@@ -601,6 +946,32 @@ final class CapturingMockSession: URLSessionProtocol {
             headerFields: nil
         )!
         return (data, response)
+    }
+}
+
+private extension LLMServiceTests {
+    /// 生成测试用的内联词汇标记，模拟 LLM 已经正确标注目标词。
+    func taggedWords(_ words: ArraySlice<VocabWord>) -> String {
+        words.map { word in
+            #"<vocab id=\"\#(word.id)\">\#(word.spelling)</vocab>"#
+        }
+        .joined(separator: ", ")
+    }
+
+    /// 生成使用 w1/w2 这类短标记 ID 的测试文本。
+    func taggedAliasWords(_ words: ArraySlice<VocabWord>, startIndex: Int) -> String {
+        words.enumerated().map { offset, word in
+            #"<vocab id=\"w\#(startIndex + offset)\">\#(word.spelling)</vocab>"#
+        }
+        .joined(separator: ", ")
+    }
+
+    /// 从 mock 请求体里取出最终发送给模型的 Prompt。
+    func requestPrompt(_ request: URLRequest) throws -> String {
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try XCTUnwrap(object["messages"] as? [[String: Any]])
+        return try XCTUnwrap(messages.first?["content"] as? String)
     }
 }
 

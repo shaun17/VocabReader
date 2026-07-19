@@ -1,360 +1,304 @@
 import SwiftUI
 
+/// 设置页的一级面板共用同一套信息结构，避免标题、说明和图标各自散落在视图里。
+enum SettingsPanel: CaseIterable {
+    case appearance
+    case article
+    case maiMemo
+    case languageModel
+
+    var title: String {
+        switch self {
+        case .appearance:
+            return "外观主题"
+        case .article:
+            return "文章设置"
+        case .maiMemo:
+            return "墨墨词库"
+        case .languageModel:
+            return "文章生成模型"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .appearance:
+            return "选择适合当前环境的阅读明暗模式"
+        case .article:
+            return "决定每天阅读的内容范围和文章结构"
+        case .maiMemo:
+            return "同步今日需要学习的单词"
+        case .languageModel:
+            return "用于生成文章、翻译和语言解析"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .appearance:
+            return "circle.lefthalf.filled"
+        case .article:
+            return "text.book.closed"
+        case .maiMemo:
+            return "books.vertical"
+        case .languageModel:
+            return "sparkles"
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
     var onSave: (() -> Void)?
+    private let showsCancelButton: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var draft: SettingsDraft
+    @State private var initialAppearance: AppAppearance
+    @State private var didSave = false
     @StateObject private var diagnosticsViewModel = SettingsConnectionDiagnosticsViewModel()
 
-    init(settings: SettingsStore, onSave: (() -> Void)? = nil) {
+    /// 使用设置快照编辑，只有点击保存后才写回全局设置。
+    init(
+        settings: SettingsStore,
+        showsCancelButton: Bool = true,
+        onSave: (() -> Void)? = nil
+    ) {
         self.settings = settings
+        self.showsCancelButton = showsCancelButton
         self.onSave = onSave
         _draft = State(initialValue: settings.makeDraft())
+        _initialAppearance = State(initialValue: settings.appearance)
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // MARK: - 文章设置
-                    SettingsSectionHeader(title: "文章设置")
+            ZStack {
+                LinedPaperBackground()
 
-                    SettingsLabel("文章主题")
-                    SettingsRow {
-                        Picker("主题", selection: $draft.selectedTopic) {
-                            ForEach(ArticleTopic.allCases) { topic in
-                                Text(topic.rawValue).tag(topic)
-                            }
+                ScrollView {
+                    LazyVStack(spacing: 18) {
+                        SettingsPanelCard(panel: .appearance) {
+                            appearanceSettingsContent
                         }
-                        .pickerStyle(.segmented)
-                        .onAppear {
-                            UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(Color.readingTitle)
-                            UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
-                            UISegmentedControl.appearance().setTitleTextAttributes([.foregroundColor: UIColor(Color.readingTitle)], for: .normal)
-                        }
-                    }
 
-                    SettingsLabel("文章体裁")
-                    ForEach(ArticleScene.allCases) { scene in
-                        SettingsRow {
-                            Toggle(scene.rawValue, isOn: sceneEnabledBinding(for: scene))
-                                .tint(Color.readingTitle)
+                        SettingsPanelCard(panel: .article) {
+                            articleSettingsContent
+                        }
+
+                        SettingsPanelCard(panel: .maiMemo) {
+                            maiMemoSettingsContent
+                        }
+
+                        SettingsPanelCard(panel: .languageModel) {
+                            languageModelSettingsContent
                         }
                     }
-
-                    SettingsHint("至少启用一种体裁")
-
-                    SettingsRow {
-                        EditableStepper(
-                            title: "今日单词",
-                            value: $draft.articleWordCount,
-                            range: ArticleGenerationLimits.articleWordCountRange,
-                            step: ArticleGenerationLimits.articleWordCountStep
-                        )
-                    }
-
-                    SettingsRow {
-                        EditableStepper(
-                            title: "每篇目标词汇",
-                            value: $draft.wordsPerArticle,
-                            range: ArticleGenerationLimits.wordsPerArticleRange,
-                            step: ArticleGenerationLimits.wordsPerArticleStep
-                        )
-                    }
-
-                    // MARK: - 连接
-                    SettingsSectionHeader(title: "连接")
-
-                    SettingsRow {
-                        UnderlinedTextField(
-                            label: "墨墨 Token",
-                            text: $draft.maiMemoToken,
-                            isSecure: true
-                        )
-                    }
-
-                    SettingsHint("获取路径：墨墨 App \u{2192}「我的」\u{2192}「更多设置」\u{2192}「开放 API」复制 Token")
-
-                    SettingsConnectionStatus(
-                        isEnabled: !draft.maiMemoToken.isEmpty,
-                        status: diagnosticsViewModel.maiMemoStatus
-                    ) {
-                        Task {
-                            await diagnosticsViewModel.testMaiMemoConnection(
-                                using: MaiMemoService(token: draft.maiMemoToken)
-                            )
-                        }
-                    }
-
-                    SettingsRow {
-                        UnderlinedTextField(
-                            label: "Base URL",
-                            text: $draft.llmBaseURL,
-                            placeholder: "https://api.openai.com/v1",
-                            keyboardType: .URL
-                        )
-                    }
-
-                    SettingsRow {
-                        UnderlinedTextField(
-                            label: "API Key",
-                            text: $draft.llmAPIKey,
-                            isSecure: true
-                        )
-                    }
-
-                    SettingsRow {
-                        UnderlinedTextField(
-                            label: "模型",
-                            text: $draft.llmModel,
-                            placeholder: "gpt-4o"
-                        )
-                    }
-
-                    SettingsConnectionStatus(
-                        isEnabled: !(draft.llmAPIKey.isEmpty || draft.llmBaseURL.isEmpty || draft.llmModel.isEmpty),
-                        status: diagnosticsViewModel.llmStatus
-                    ) {
-                        Task {
-                            await diagnosticsViewModel.testLLMConnection(
-                                using: LLMService(config: draft.llmConfig)
-                            )
-                        }
-                    }
-
-                    Spacer(minLength: 40)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 36)
                 }
-                .padding(.horizontal, 24)
+                .scrollDismissesKeyboard(.interactively)
             }
-            .background(Color.readingBackground.ignoresSafeArea())
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
+            .tint(Color.readingTitle)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                if showsCancelButton {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消", action: cancelAndDismiss)
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
-                        settings.apply(draft)
-                        settings.save()
-                        onSave?()
-                        dismiss()
-                    }
-                    .disabled(!draft.isConfigured)
+                    Button("保存", action: saveAndDismiss)
+                        .fontWeight(.semibold)
+                        .disabled(!draft.isConfigured)
                 }
             }
         }
+        .onDisappear(perform: restoreAppearanceIfNeeded)
     }
 
-    private func sceneEnabledBinding(for scene: ArticleScene) -> Binding<Bool> {
-        Binding(
-            get: { draft.isSceneEnabled(scene) },
-            set: { isEnabled in draft.setSceneEnabled(isEnabled, for: scene) }
+    @ViewBuilder
+    private var appearanceSettingsContent: some View {
+        SettingsFieldLabel("显示模式")
+
+        LazyVGrid(columns: SettingsLayout.choiceColumns(for: dynamicTypeSize), spacing: 8) {
+            ForEach(AppAppearance.allCases) { appearance in
+                SettingsChoiceButton(
+                    title: appearance.title,
+                    systemImage: appearance.systemImage,
+                    isSelected: draft.appearance == appearance
+                ) {
+                    previewAppearance(appearance)
+                }
+            }
+        }
+
+        SettingsHint(appearanceHint)
+    }
+
+    /// 明确说明“跟随系统”的当前结果，以及手动选择对设备设置的覆盖关系。
+    private var appearanceHint: String {
+        guard draft.appearance == .system else {
+            return "已优先使用\(draft.appearance.title)主题，不受设备外观变化影响"
+        }
+
+        let currentAppearance = colorScheme == .dark ? "深色" : "浅色"
+        return "默认跟随系统；当前显示：\(currentAppearance)"
+    }
+
+    @ViewBuilder
+    private var articleSettingsContent: some View {
+        SettingsFieldLabel("文章主题")
+
+        LazyVGrid(columns: SettingsLayout.choiceColumns(for: dynamicTypeSize), spacing: 8) {
+            ForEach(ArticleTopic.allCases) { topic in
+                SettingsChoiceButton(
+                    title: topic.rawValue,
+                    systemImage: topic.systemImageName,
+                    isSelected: draft.selectedTopic == topic
+                ) {
+                    draft.selectedTopic = topic
+                }
+            }
+        }
+
+        SettingsFieldLabel("文章体裁")
+
+        LazyVGrid(columns: SettingsLayout.choiceColumns(for: dynamicTypeSize), spacing: 8) {
+            ForEach(ArticleScene.allCases) { scene in
+                SettingsChoiceButton(
+                    title: scene.rawValue,
+                    systemImage: scene.systemImageName,
+                    isSelected: draft.isSceneEnabled(scene)
+                ) {
+                    draft.setSceneEnabled(!draft.isSceneEnabled(scene), for: scene)
+                }
+            }
+        }
+
+        SettingsHint("至少保留一种体裁，生成时会在已选体裁中轮换")
+
+        SettingsDivider()
+
+        VStack(spacing: 0) {
+            EditableStepper(
+                title: "今日单词",
+                subtitle: "当天计划覆盖的总词量",
+                value: $draft.articleWordCount,
+                range: ArticleGenerationLimits.articleWordCountRange,
+                step: ArticleGenerationLimits.articleWordCountStep
+            )
+
+            SettingsDivider()
+
+            EditableStepper(
+                title: "每篇目标词汇",
+                subtitle: "单篇文章需要自然包含的词量",
+                value: $draft.wordsPerArticle,
+                range: ArticleGenerationLimits.wordsPerArticleRange,
+                step: ArticleGenerationLimits.wordsPerArticleStep
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var maiMemoSettingsContent: some View {
+        SettingsTextField(
+            label: "墨墨 Token",
+            text: $draft.maiMemoToken,
+            placeholder: "输入墨墨开放 API Token",
+            isSecure: true
         )
-    }
-}
 
-// MARK: - Settings components
+        SettingsHint("获取路径：墨墨 App → 我的 → 更多设置 → 开放 API")
 
-private struct SettingsSectionHeader: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(.subheadline, design: .serif))
-            .foregroundStyle(Color.readingTitle)
-            .padding(.top, 32)
-            .padding(.bottom, 12)
-    }
-}
-
-private struct SettingsLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.top, 12)
-    }
-}
-
-private struct SettingsRow<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-            .padding(.vertical, 10)
-    }
-}
-
-private struct SettingsHint: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .padding(.top, 2)
-            .padding(.bottom, 8)
-    }
-}
-
-/// 带底部下划线的输入框，视觉上更明确。
-private struct UnderlinedTextField: View {
-    let label: String
-    @Binding var text: String
-    var placeholder: String = ""
-    var isSecure: Bool = false
-    var keyboardType: UIKeyboardType = .default
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Group {
-                if isSecure {
-                    SecureField(placeholder, text: $text)
-                } else {
-                    TextField(placeholder, text: $text)
-                }
-            }
-            .font(.system(.body, design: .serif))
-            .keyboardType(keyboardType)
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-            .padding(.bottom, 6)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(Color.readingRule)
-                    .frame(height: 1)
-            }
-        }
-    }
-}
-
-private struct SettingsConnectionStatus: View {
-    let isEnabled: Bool
-    let status: ConnectionTestStatus
-    let action: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                guard isEnabled else { return }
-                action()
-            } label: {
-                Text("测试连接")
-                    .font(.caption)
-                    .foregroundColor(isEnabled ? Color.readingTitle : .gray.opacity(0.4))
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            switch status {
-            case .idle:
-                EmptyView()
-            case .testing:
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                    Text("测试中…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            case .success(let message):
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.green)
-            case .failure(let message):
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-        .padding(.vertical, 6)
-    }
-}
-
-private struct EditableStepper: View {
-    let title: String
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    let step: Int
-    @State private var text: String
-    @FocusState private var isFocused: Bool
-
-    init(title: String, value: Binding<Int>, range: ClosedRange<Int>, step: Int) {
-        self.title = title
-        _value = value
-        self.range = range
-        self.step = step
-        _text = State(initialValue: String(value.wrappedValue))
-    }
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(.system(.body, design: .serif))
-            Spacer()
-            HStack(spacing: 0) {
-                Button {
-                    let newValue = max(value - step, range.lowerBound)
-                    value = newValue
-                    text = String(newValue)
-                } label: {
-                    Image(systemName: "minus")
-                        .font(.caption)
-                        .frame(width: 28, height: 28)
-                        .foregroundColor(value <= range.lowerBound ? .gray.opacity(0.3) : Color.readingTitle)
-                }
-                .buttonStyle(.plain)
-                .disabled(value <= range.lowerBound)
-
-                TextField("", text: $text)
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.center)
-                    .font(.system(.body, design: .serif))
-                    .frame(width: 40)
-                    .focused($isFocused)
-                    .onChange(of: isFocused) { _, focused in
-                        if !focused { commitText() }
-                    }
-                    .onSubmit { commitText() }
-
-                Button {
-                    let newValue = min(value + step, range.upperBound)
-                    value = newValue
-                    text = String(newValue)
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.caption)
-                        .frame(width: 28, height: 28)
-                        .foregroundColor(value >= range.upperBound ? .gray.opacity(0.3) : Color.readingTitle)
-                }
-                .buttonStyle(.plain)
-                .disabled(value >= range.upperBound)
+        SettingsConnectionStatus(
+            isEnabled: !draft.maiMemoToken.isEmpty,
+            status: diagnosticsViewModel.maiMemoStatus
+        ) {
+            Task {
+                await diagnosticsViewModel.testMaiMemoConnection(
+                    using: MaiMemoService(token: draft.maiMemoToken)
+                )
             }
         }
     }
 
-    private func commitText() {
-        guard let parsed = Int(text) else {
-            text = String(value)
-            return
-        }
+    @ViewBuilder
+    private var languageModelSettingsContent: some View {
+        SettingsTextField(
+            label: "LLM Base URL",
+            text: $draft.llmBaseURL,
+            placeholder: "https://api.deepseek.com",
+            keyboardType: .URL
+        )
 
-        // 手动输入同样走范围和步长吸附，避免 0 或越界值留在草稿里。
-        let clamped = min(max(parsed, range.lowerBound), range.upperBound)
-        let snapped = range.lowerBound + ((clamped - range.lowerBound + step / 2) / step) * step
-        let final = min(snapped, range.upperBound)
-        value = final
-        text = String(final)
+        SettingsTextField(
+            label: "LLM API Key",
+            text: $draft.llmAPIKey,
+            placeholder: "输入模型服务 API Key",
+            isSecure: true
+        )
+
+        SettingsTextField(
+            label: "模型",
+            text: $draft.llmModel,
+            placeholder: "deepseek-v4-flash"
+        )
+
+        SettingsConnectionStatus(
+            isEnabled: !(draft.llmAPIKey.isEmpty || draft.llmBaseURL.isEmpty || draft.llmModel.isEmpty),
+            status: diagnosticsViewModel.llmStatus
+        ) {
+            Task {
+                await diagnosticsViewModel.testLLMConnection(
+                    using: LLMService(config: draft.llmConfig)
+                )
+            }
+        }
+    }
+
+    /// 保存草稿后通知首页同步分页配置，并关闭设置页。
+    private func saveAndDismiss() {
+        didSave = true
+        settings.apply(draft)
+        settings.save()
+        onSave?()
+        dismiss()
+    }
+
+    /// 临时更新全局外观以驱动窗口即时预览，真正的持久化仍由“保存”完成。
+    private func previewAppearance(_ appearance: AppAppearance) {
+        draft.appearance = appearance
+        settings.appearance = appearance
+    }
+
+    /// 取消时回滚预览，保证其他设置仍保持草稿式编辑语义。
+    private func cancelAndDismiss() {
+        draft.appearance = initialAppearance
+        settings.appearance = initialAppearance
+        dismiss()
+    }
+
+    /// 下滑关闭设置页时同样回滚未保存预览，避免临时主题残留到主界面。
+    private func restoreAppearanceIfNeeded() {
+        guard !didSave else { return }
+        settings.appearance = initialAppearance
+    }
+}
+
+// MARK: - Settings layout
+
+private enum SettingsLayout {
+    /// 普通字号保持紧凑三列；辅助字号改为单列，避免主题和文章选项被截断。
+    static func choiceColumns(for dynamicTypeSize: DynamicTypeSize) -> [GridItem] {
+        let columnCount = dynamicTypeSize.isAccessibilitySize ? 1 : 3
+        return Array(
+            repeating: GridItem(.flexible(), spacing: 8),
+            count: columnCount
+        )
     }
 }

@@ -26,12 +26,12 @@ struct ArticlePlayerBar: View {
                 }
                 .tint(Color.readingTitle)
 
-                playerButton(icon: playButtonIcon) {
+                playerButton(icon: playButtonIcon, accessibilityLabel: playButtonAccessibilityLabel) {
                     player.togglePlayback()
                 }
 
                 if player.playbackState != .idle {
-                    playerButton(icon: "stop.fill") {
+                    playerButton(icon: "stop.fill", accessibilityLabel: "停止播放") {
                         player.stop()
                     }
                 }
@@ -56,25 +56,37 @@ struct ArticlePlayerBar: View {
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
                                 .stroke(Color.readingTitle.opacity(0.3), lineWidth: 1)
                         )
+                        .frame(minHeight: 44)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(Color.readingBackground.ignoresSafeArea(.container, edges: .bottom))
+        .background(Color.readingNavigationBackground.ignoresSafeArea(.container, edges: .bottom))
     }
 
-    private func playerButton(icon: String, action: @escaping () -> Void) -> some View {
+    /// 为纯图标播放控件提供统一的 44pt 触控区域和明确的辅助功能名称。
+    private func playerButton(
+        icon: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Color.readingTitle)
-                .frame(width: 28, height: 28)
+                .frame(width: 44, height: 44)
         }
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var playButtonIcon: String {
         player.playbackState == .playing ? "pause.fill" : "play.fill"
+    }
+
+    /// 播放状态改变时同步更新 VoiceOver 文案，避免图标语义含糊。
+    private var playButtonAccessibilityLabel: String {
+        player.playbackState == .playing ? "暂停播放" : "播放文章"
     }
 
     private var rateLabel: String {
