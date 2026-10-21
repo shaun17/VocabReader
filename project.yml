@@ -3,8 +3,12 @@ options:
   developmentLanguage: zh-Hans
   bundleIdPrefix: com.vocabreader
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   xcodeVersion: "16.0"
+packages:
+  ptts:
+    url: https://github.com/gradium-ai/xn-ptts
+    exactVersion: 0.4.0
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -24,7 +28,29 @@ targets:
         MARKETING_VERSION: "1.0.3"
         PRODUCT_BUNDLE_IDENTIFIER: com.vocabreader.app
         INFOPLIST_FILE: VocabReader/Info.plist
-    dependencies: []
+        # 内置 Phonon 模型的脚本需要写入 App 包内的目录。
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+      configs:
+        # Debug 从本机 scripts/serve-phonon-models.sh 下载；Release 从 Cloudflare R2（scripts/upload-phonon-models.sh 上传）下载。
+        Debug:
+          PHONON_MODELS_BASE_URL: http://localhost:8765
+        Release:
+          PHONON_MODELS_BASE_URL: https://assets.wenmsg.fun/phonon/31m-en/v0.4.0
+    postCompileScripts:
+      # Phonon 模型只在 Debug 且本地已获取时内置，便于真机调试；正式包改为在设置页按需下载。
+      # 模型不进 git，用 scripts/fetch-phonon-models.sh 获取，没有时照常构建。
+      - name: Embed Phonon Models (Debug)
+        basedOnDependencyAnalysis: false
+        script: |
+          DEST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/PhononModels"
+          if [ "$CONFIGURATION" = "Debug" ] && [ -f "$SRCROOT/PhononModels/bundle.json" ]; then
+            rsync -a --delete "$SRCROOT/PhononModels/" "$DEST/"
+          else
+            rm -rf "$DEST"
+          fi
+    dependencies:
+      - package: ptts
+        product: ptts
   VocabReaderTests:
     type: bundle.unit-test
     platform: iOS

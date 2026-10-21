@@ -3,3 +3,7 @@
 xcuserdata/
 DerivedData/
 build/
+
+# Phonon 模型包体积大，只在本地获取
+PhononModels/
+.wrangler/

@@ -25,6 +25,8 @@ final class SettingsStoreTests: XCTestCase {
         store.selectedTopic = .medical
         store.enabledScenes = [.dialogue, .science]
         store.appearance = .dark
+        store.speechEngine = .phonon
+        store.phononVoice = "Spencer"
 
         store.save()
 
@@ -38,6 +40,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloadedStore.selectedTopic, .medical)
         XCTAssertEqual(reloadedStore.enabledScenes, [.dialogue, .science])
         XCTAssertEqual(reloadedStore.appearance, .dark)
+        XCTAssertEqual(reloadedStore.speechEngine, .phonon)
+        XCTAssertEqual(reloadedStore.phononVoice, "Spencer")
     }
 
     func testSaveRestoresConfiguredStateAfterRelaunch() {
@@ -118,6 +122,24 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedTopic, .general)
         XCTAssertEqual(store.enabledScenes, ArticleScene.allCases)
         XCTAssertEqual(store.appearance, .system)
+    }
+
+    /// 历史版本没有朗读引擎设置时保持系统语音，不应在升级后自动加载大模型。
+    func testMissingSpeechEngineDefaultsToSystem() {
+        storage.defaults.set("unknown", forKey: storage.speechEngineKey)
+
+        let store = SettingsStore(storage: storage)
+
+        XCTAssertEqual(store.speechEngine, .system)
+    }
+
+    /// 音色名不在目录里（例如以后下架的音色）时回退到默认音色，避免朗读时找不到音色。
+    func testUnknownPhononVoiceFallsBackToDefault() {
+        storage.defaults.set("Grub the Ogre", forKey: storage.phononVoiceKey)
+
+        let store = SettingsStore(storage: storage)
+
+        XCTAssertEqual(store.phononVoice, PhononVoice.defaultName)
     }
 
     /// 历史版本没有外观值时必须默认跟随系统，不应擅自锁定浅色或深色。
@@ -201,15 +223,15 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.wordsPerArticle, 5)
     }
 
-    /// 四类设置必须通过同一展示模型提供标题、说明和图标，避免页面再次出现不同分区各写一套样式。
+    /// 五类设置必须通过同一展示模型提供标题、说明和图标，避免页面再次出现不同分区各写一套样式。
     func testSettingsPanelsUseOneSharedInformationArchitecture() {
         XCTAssertEqual(
             SettingsPanel.allCases.map(\.title),
-            ["外观主题", "文章设置", "墨墨词库", "文章生成模型"]
+            ["外观主题", "文章设置", "朗读语音", "墨墨词库", "文章生成模型"]
         )
         XCTAssertEqual(
             SettingsPanel.allCases.map(\.systemImage),
-            ["circle.lefthalf.filled", "text.book.closed", "books.vertical", "sparkles"]
+            ["circle.lefthalf.filled", "text.book.closed", "waveform", "books.vertical", "sparkles"]
         )
         XCTAssertTrue(SettingsPanel.allCases.allSatisfy { !$0.subtitle.isEmpty })
     }
@@ -248,5 +270,7 @@ final class SettingsStoreTests: XCTestCase {
         storage.defaults.removeObject(forKey: storage.selectedTopicKey)
         storage.defaults.removeObject(forKey: storage.enabledScenesKey)
         storage.defaults.removeObject(forKey: storage.appearanceKey)
+        storage.defaults.removeObject(forKey: storage.speechEngineKey)
+        storage.defaults.removeObject(forKey: storage.phononVoiceKey)
     }
 }
