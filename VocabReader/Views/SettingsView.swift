@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsPanel: CaseIterable {
     case appearance
     case article
+    case speech
     case maiMemo
     case languageModel
 
@@ -13,6 +14,8 @@ enum SettingsPanel: CaseIterable {
             return "外观主题"
         case .article:
             return "文章设置"
+        case .speech:
+            return "朗读语音"
         case .maiMemo:
             return "墨墨词库"
         case .languageModel:
@@ -26,6 +29,8 @@ enum SettingsPanel: CaseIterable {
             return "选择适合当前环境的阅读明暗模式"
         case .article:
             return "决定每天阅读的内容范围和文章结构"
+        case .speech:
+            return "选择文章朗读使用的语音引擎"
         case .maiMemo:
             return "同步今日需要学习的单词"
         case .languageModel:
@@ -39,6 +44,8 @@ enum SettingsPanel: CaseIterable {
             return "circle.lefthalf.filled"
         case .article:
             return "text.book.closed"
+        case .speech:
+            return "waveform"
         case .maiMemo:
             return "books.vertical"
         case .languageModel:
@@ -57,6 +64,7 @@ struct SettingsView: View {
     @State private var initialAppearance: AppAppearance
     @State private var didSave = false
     @StateObject private var diagnosticsViewModel = SettingsConnectionDiagnosticsViewModel()
+    @ObservedObject private var phononEngine = PhononEngine.shared
 
     /// 使用设置快照编辑，只有点击保存后才写回全局设置。
     init(
@@ -84,6 +92,10 @@ struct SettingsView: View {
 
                         SettingsPanelCard(panel: .article) {
                             articleSettingsContent
+                        }
+
+                        SettingsPanelCard(panel: .speech) {
+                            speechSettingsContent
                         }
 
                         SettingsPanelCard(panel: .maiMemo) {
@@ -116,7 +128,10 @@ struct SettingsView: View {
                 }
             }
         }
-        .onDisappear(perform: restoreAppearanceIfNeeded)
+        .onDisappear {
+            restoreAppearanceIfNeeded()
+            phononEngine.stopPreview()
+        }
     }
 
     @ViewBuilder
@@ -197,6 +212,99 @@ struct SettingsView: View {
                 range: ArticleGenerationLimits.wordsPerArticleRange,
                 step: ArticleGenerationLimits.wordsPerArticleStep
             )
+        }
+    }
+
+    @ViewBuilder
+    private var speechSettingsContent: some View {
+        SettingsFieldLabel("语音引擎")
+
+        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
+            ForEach(availableSpeechEngines) { engine in
+                SettingsChoiceButton(
+                    title: engine.title,
+                    isSelected: draft.speechEngine == engine
+                ) {
+                    selectSpeechEngine(engine)
+                }
+            }
+        }
+
+        if draft.speechEngine == .phonon {
+            phononModelStatus
+        }
+
+        // 模型下载并编译完成前音色无法试听也用不上，先不展示，避免和下载、编译提示挤在一起。
+        if draft.speechEngine == .phonon, phononEngine.status == .ready {
+            SettingsDivider()
+
+            NavigationLink {
+                PhononVoicePickerView(selection: $draft.phononVoice, engine: phononEngine)
+            } label: {
+                SettingsNavigationRow(
+                    title: "音色",
+                    subtitle: selectedPhononVoice.detail,
+                    value: selectedPhononVoice.name
+                )
+            }
+            .buttonStyle(SettingsPressButtonStyle())
+        }
+    }
+
+    /// 当前包拿不到模型时不展示 Phonon，避免用户选中后只能看到失败提示。
+    private var availableSpeechEngines: [SpeechEngine] {
+        SpeechEngine.allCases.filter { engine in
+            engine != .phonon || phononEngine.isAvailable || draft.speechEngine == .phonon
+        }
+    }
+
+    /// 选中 Phonon 时立即尝试加载本机已有模型，这样未下载的状态能马上反映到按钮上。
+    private func selectSpeechEngine(_ engine: SpeechEngine) {
+        draft.speechEngine = engine
+        guard engine == .phonon else { return }
+        Task { await phononEngine.prepare() }
+    }
+
+    /// 模型需要用户主动下载，加载、编译和失败回退都在这里说明。
+    @ViewBuilder
+    private var phononModelStatus: some View {
+        switch phononEngine.status {
+        case .idle, .preparing:
+            SettingsHint(phononPreparingMessage)
+        case .notDownloaded:
+            phononDownloadButton(title: "下载模型（\(PhononEngine.downloadSizeDescription)）")
+            SettingsHint("建议在 Wi-Fi 下下载；下载完成前朗读使用系统语音")
+        case .downloading(let fraction):
+            ProgressView(value: fraction)
+                .tint(Color.readingTitle)
+            SettingsHint("正在下载模型 \(Int(fraction * 100))%，请保持 App 在前台")
+        case .ready:
+            EmptyView()
+        case .failed(let message):
+            phononDownloadButton(title: "重试")
+            SettingsHint("加载失败，朗读将使用系统语音：\(message)")
+        }
+    }
+
+    private var selectedPhononVoice: PhononVoice {
+        PhononVoice.named(draft.phononVoice) ?? PhononVoice.catalog[0]
+    }
+
+    private var phononPreparingMessage: String {
+        if case .preparing(let message) = phononEngine.status {
+            return message
+        }
+        return "正在检查本机模型…"
+    }
+
+    private func phononDownloadButton(title: String) -> some View {
+        SettingsCapsuleButton(
+            title: title,
+            busyTitle: "准备中…",
+            systemImage: "arrow.down.circle",
+            isEnabled: PhononEngine.remoteBaseURL != nil
+        ) {
+            Task { await phononEngine.prepare(allowDownload: true) }
         }
     }
 

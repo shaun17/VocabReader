@@ -13,6 +13,8 @@ struct SettingsStoreStorage {
     let selectedTopicKey: String
     let enabledScenesKey: String
     let appearanceKey: String
+    let speechEngineKey: String
+    let phononVoiceKey: String
 
     static let app = SettingsStoreStorage(
         defaults: .standard,
@@ -25,7 +27,9 @@ struct SettingsStoreStorage {
         wordsPerArticleKey: "wordsPerArticle",
         selectedTopicKey: "selectedArticleTopic",
         enabledScenesKey: "enabledArticleScenes",
-        appearanceKey: "appAppearance"
+        appearanceKey: "appAppearance",
+        speechEngineKey: "speechEngine",
+        phononVoiceKey: "phononVoice"
     )
 
     static func testing(namespace: String) -> SettingsStoreStorage {
@@ -47,7 +51,9 @@ struct SettingsStoreStorage {
             wordsPerArticleKey: "vocabreader.tests.\(namespace).wordsPerArticle",
             selectedTopicKey: "vocabreader.tests.\(namespace).selectedArticleTopic",
             enabledScenesKey: "vocabreader.tests.\(namespace).enabledArticleScenes",
-            appearanceKey: "vocabreader.tests.\(namespace).appAppearance"
+            appearanceKey: "vocabreader.tests.\(namespace).appAppearance",
+            speechEngineKey: "vocabreader.tests.\(namespace).speechEngine",
+            phononVoiceKey: "vocabreader.tests.\(namespace).phononVoice"
         )
     }
 }
@@ -64,6 +70,8 @@ final class SettingsStore: ObservableObject {
     @Published var selectedTopic: ArticleTopic = .general
     @Published var enabledScenes: [ArticleScene] = ArticleScene.allCases
     @Published var appearance: AppAppearance = .system
+    @Published var speechEngine: SpeechEngine = .system
+    @Published var phononVoice: String = PhononVoice.defaultName
 
     private let storage: SettingsStoreStorage
 
@@ -104,7 +112,9 @@ final class SettingsStore: ObservableObject {
             wordsPerArticle: wordsPerArticle,
             selectedTopic: selectedTopic,
             enabledScenes: enabledScenes,
-            appearance: appearance
+            appearance: appearance,
+            speechEngine: speechEngine,
+            phononVoice: phononVoice
         )
     }
 
@@ -119,6 +129,8 @@ final class SettingsStore: ObservableObject {
         selectedTopic = draft.selectedTopic
         enabledScenes = Self.normalizedEnabledScenes(draft.enabledScenes)
         appearance = draft.appearance
+        speechEngine = draft.speechEngine
+        phononVoice = PhononVoice.normalizedName(draft.phononVoice)
     }
 
     /// 将当前设置持久化到本地存储，供下次启动恢复。
@@ -132,6 +144,8 @@ final class SettingsStore: ObservableObject {
         storage.defaults.set(selectedTopic.rawValue, forKey: storage.selectedTopicKey)
         storage.defaults.set(enabledScenes.map(\.rawValue), forKey: storage.enabledScenesKey)
         storage.defaults.set(appearance.rawValue, forKey: storage.appearanceKey)
+        storage.defaults.set(speechEngine.rawValue, forKey: storage.speechEngineKey)
+        storage.defaults.set(phononVoice, forKey: storage.phononVoiceKey)
     }
 
     /// 从本地存储恢复设置，并对历史值做兼容与规范化。
@@ -150,6 +164,9 @@ final class SettingsStore: ObservableObject {
         enabledScenes = Self.normalizedEnabledScenes(storedScenes.compactMap(ArticleScene.init(rawValue:)))
         let storedAppearance = storage.defaults.string(forKey: storage.appearanceKey)
         appearance = AppAppearance(rawValue: storedAppearance ?? "") ?? .system
+        let storedSpeechEngine = storage.defaults.string(forKey: storage.speechEngineKey)
+        speechEngine = SpeechEngine(rawValue: storedSpeechEngine ?? "") ?? .system
+        phononVoice = PhononVoice.normalizedName(storage.defaults.string(forKey: storage.phononVoiceKey))
     }
 
     private static func normalizedArticleWordCount(_ value: Int) -> Int {

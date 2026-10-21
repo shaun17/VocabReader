@@ -22,6 +22,13 @@ struct VocabReaderApp: App {
                     .accessibilityHidden(true)
             }
             .tint(Color.readingTitle)
+            .task(id: settings.speechEngine) {
+                guard settings.speechEngine == .phonon else { return }
+                await PhononEngine.shared.prepare()
+            }
+            .task(id: settings.phononVoice) {
+                await PhononEngine.shared.selectVoice(settings.phononVoice)
+            }
         }
     }
 

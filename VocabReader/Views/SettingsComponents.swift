@@ -31,15 +31,60 @@ struct SettingsPanelCard<Content: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.readingCardFill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.readingSeparator.opacity(0.72), lineWidth: 0.8)
-                }
+        .settingsCardBackground()
+    }
+}
+
+extension View {
+    /// 设置页卡片共用的纸片底板，二级页面的分组卡片也使用同一外观。
+    func settingsCardBackground() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.readingCardFill)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.readingSeparator.opacity(0.72), lineWidth: 0.8)
+                    }
+            }
+    }
+}
+
+/// 进入二级页面的设置行：左侧标题与说明，右侧当前值和箭头，与词量步进行保持相同的文字层级。
+struct SettingsNavigationRow: View {
+    let title: String
+    let subtitle: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: SettingsStepperMetrics.titleSpacing) {
+                Text(title)
+                    .font(.system(.body, design: .serif).weight(.medium))
+                    .foregroundStyle(Color.readingTextPrimary)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Color.readingTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 12)
+
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.readingTitle)
+                .lineLimit(1)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.readingTextTertiary)
+                .accessibilityHidden(true)
         }
+        .padding(.vertical, SettingsStepperMetrics.rowVerticalPadding)
+        .frame(minHeight: SettingsStepperMetrics.minimumTouchSize)
+        .contentShape(Rectangle())
     }
 }
 
@@ -186,6 +231,63 @@ struct SettingsTextField: View {
     }
 }
 
+/// 设置页内的胶囊操作按钮，忙碌时切换为实心底色并显示转圈。
+struct SettingsCapsuleButton: View {
+    let title: String
+    let busyTitle: String
+    let systemImage: String
+    var isEnabled = true
+    var isBusy = false
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            guard isEnabled else { return }
+            action()
+        } label: {
+            HStack(spacing: 7) {
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(Color.readingAccentForeground)
+                } else {
+                    Image(systemName: systemImage)
+                }
+
+                Text(isBusy ? busyTitle : title)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(foregroundColor)
+            .padding(.horizontal, 10)
+            .frame(minHeight: 30)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(backgroundColor)
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(borderColor, lineWidth: 0.8)
+                    }
+            }
+            .frame(minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SettingsPressButtonStyle())
+        .disabled(!isEnabled || isBusy)
+    }
+
+    private var foregroundColor: Color {
+        isBusy ? .readingAccentForeground : (isEnabled ? .readingTitle : .readingTextSecondary)
+    }
+
+    private var backgroundColor: Color {
+        isBusy ? .readingTitle : .readingControlFill.opacity(isEnabled ? 1 : 0.48)
+    }
+
+    private var borderColor: Color {
+        Color.readingTitle.opacity(isEnabled ? 0.26 : 0.10)
+    }
+}
+
 struct SettingsConnectionStatus: View {
     let isEnabled: Bool
     let status: ConnectionTestStatus
@@ -193,38 +295,14 @@ struct SettingsConnectionStatus: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                guard isEnabled else { return }
-                action()
-            } label: {
-                HStack(spacing: 7) {
-                    if status == .testing {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .tint(Color.readingAccentForeground)
-                    } else {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                    }
-
-                    Text(status == .testing ? "测试中…" : "测试连接")
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(buttonForegroundColor)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 30)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(buttonBackgroundColor)
-                        .overlay {
-                            Capsule(style: .continuous)
-                                .stroke(buttonBorderColor, lineWidth: 0.8)
-                        }
-                }
-                .frame(minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(SettingsPressButtonStyle())
-            .disabled(!isEnabled || status == .testing)
+            SettingsCapsuleButton(
+                title: "测试连接",
+                busyTitle: "测试中…",
+                systemImage: "antenna.radiowaves.left.and.right",
+                isEnabled: isEnabled,
+                isBusy: status == .testing,
+                action: action
+            )
 
             statusMessage
         }
@@ -245,18 +323,6 @@ struct SettingsConnectionStatus: View {
                 .foregroundStyle(Color.readingError)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var buttonForegroundColor: Color {
-        status == .testing ? .readingAccentForeground : (isEnabled ? .readingTitle : .readingTextSecondary)
-    }
-
-    private var buttonBackgroundColor: Color {
-        status == .testing ? .readingTitle : .readingControlFill.opacity(isEnabled ? 1 : 0.48)
-    }
-
-    private var buttonBorderColor: Color {
-        Color.readingTitle.opacity(isEnabled ? 0.26 : 0.10)
     }
 }
 

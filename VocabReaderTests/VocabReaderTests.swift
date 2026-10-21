@@ -385,6 +385,24 @@ final class VocabReaderTests: XCTestCase {
         XCTAssertEqual(speechService.stopCallCount, 0)
         XCTAssertTrue(speechService.spokenTexts.isEmpty)
     }
+
+    func testPhononPlaybackRateMatchesPlayerBarLabels() {
+        XCTAssertEqual(PhononSpeechService.playbackRate(for: 0.35), 0.5)
+        XCTAssertEqual(PhononSpeechService.playbackRate(for: 0.5), 1.0)
+        XCTAssertEqual(PhononSpeechService.playbackRate(for: 0.55), 1.5)
+        XCTAssertEqual(PhononSpeechService.playbackRate(for: 0.6), 2.0)
+    }
+
+    /// 两种口音都要同时提供男女音色，默认音色必须在目录里。
+    func testPhononVoiceCatalogCoversBothAccentsAndGenders() {
+        XCTAssertEqual(PhononVoice.catalog.count, 25)
+        XCTAssertEqual(Set(PhononVoice.catalog.map(\.name)).count, PhononVoice.catalog.count)
+        XCTAssertNotNil(PhononVoice.named(PhononVoice.defaultName))
+        for accent in PhononAccent.allCases {
+            let genders = Set(PhononVoice.voices(for: accent).map(\.gender))
+            XCTAssertEqual(genders, [.female, .male])
+        }
+    }
 }
 
 private final class MockSpeechService: SpeechServiceProtocol {

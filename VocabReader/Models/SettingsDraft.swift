@@ -10,6 +10,8 @@ struct SettingsDraft: Equatable {
     var selectedTopic: ArticleTopic
     var enabledScenes: [ArticleScene]
     var appearance: AppAppearance = .system
+    var speechEngine: SpeechEngine = .system
+    var phononVoice: String = PhononVoice.defaultName
 
     var isConfigured: Bool {
         !maiMemoToken.isEmpty &&

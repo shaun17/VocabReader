@@ -23,7 +23,7 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
     private let charOffsets: [Int]
     private let totalChars: Int
 
-    init(paragraphs: [ArticleParagraph], speechService: SpeechServiceProtocol = SpeechService()) {
+    init(paragraphs: [ArticleParagraph], speechService: SpeechServiceProtocol = AdaptiveSpeechService()) {
         self.paragraphs = paragraphs
         self.speechService = speechService
 
