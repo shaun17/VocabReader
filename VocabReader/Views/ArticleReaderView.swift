@@ -256,7 +256,7 @@ private struct ArticleParagraphSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             SelectableAttributedTextView(
                 attributedText: NSAttributedString(
                     formatter.formatParagraph(
@@ -290,6 +290,7 @@ private struct ArticleParagraphSection: View {
                 ParagraphSupplementDrawer(isOpen: drawerState.isOpen, animation: supplementAnimation) {
                     supplementContent(for: renderedSupplement)
                 }
+                .transition(.identity)
             }
         }
         .padding(8)
@@ -371,7 +372,9 @@ private struct ArticleParagraphSection: View {
         // 没有已渲染内容且新状态也是空时，不启动关闭计时，避免普通段落出现时产生多余状态更新。
         guard supplement != nil || drawerState.renderedSupplement != nil || drawerState.isOpen else { return }
 
-        let mutation = drawerState.update(with: supplement)
+        let mutation = withAnimation(supplementAnimation) {
+            drawerState.update(with: supplement)
+        }
 
         guard case let .close(token) = mutation else { return }
 
@@ -436,6 +439,8 @@ private struct ParagraphSupplementDrawer<Content: View>: View {
 
     var body: some View {
         content()
+            // 将段落间距也纳入抽屉高度，避免关闭后移除容器时文章再次跳动。
+            .padding(.top, 8)
             .fixedSize(horizontal: false, vertical: true)
             .background {
                 GeometryReader { proxy in
@@ -448,10 +453,15 @@ private struct ParagraphSupplementDrawer<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: isOpen ? measuredHeight : 0, alignment: .top)
             .clipped()
+            .opacity(isOpen ? 1 : 0)
+            .allowsHitTesting(isOpen)
             .accessibilityHidden(!isOpen)
             .animation(animation, value: isOpen)
             .onPreferenceChange(ParagraphSupplementHeightPreferenceKey.self) { height in
-                measuredHeight = height
+                // 首次展开及异步结果返回时 isOpen 不变，需要单独动画化实测高度。
+                withAnimation(animation) {
+                    measuredHeight = height
+                }
             }
     }
 }

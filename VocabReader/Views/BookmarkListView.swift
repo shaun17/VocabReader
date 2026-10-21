@@ -5,6 +5,7 @@ struct BookmarkListView: View {
     let translator: ArticleParagraphTranslatorProtocol
 
     @State private var expandedWordID: UUID?
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
         Group {
@@ -62,9 +63,10 @@ struct BookmarkListView: View {
             .sorted { $0.date > $1.date }
     }
 
-    /// 收藏行只做轻量动画切换，避免 `List` 在位移过渡下出现明显抖动。
     private func toggleExpandedWord(_ wordID: UUID) {
-        expandedWordID = expandedWordID == wordID ? nil : wordID
+        withAnimation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.26)) {
+            expandedWordID = expandedWordID == wordID ? nil : wordID
+        }
     }
 
     /// 收藏页改用自定义卡片后，删除动作通过侧滑按钮处理，保持交互能力不回退。
@@ -120,9 +122,10 @@ private struct BookmarkRow: View {
                             .foregroundStyle(Color.readingTitle)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        Image(systemName: "chevron.down")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Color.readingTextTertiary)
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
 
                     Text(word.sentence)
