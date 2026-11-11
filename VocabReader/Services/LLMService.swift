@@ -14,8 +14,7 @@ enum LLMError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .httpError(let code, let body):
-            if let body { return "LLM HTTP \(code): \(body.prefix(200))" }
-            return "LLM HTTP 错误 \(code)"
+            return Self.httpErrorDescription(code, serverMessage: Self.serverMessage(from: body))
         case .noChoices: return "LLM 未返回任何内容"
         case .invalidResponse: return "LLM 请求地址无效，请检查 Base URL"
         case .requestTimedOut(let timeout): return "LLM 请求超时，已等待 \(Int(timeout)) 秒"
@@ -24,6 +23,46 @@ enum LLMError: Error, LocalizedError {
         case .temporarilyUnavailable: return "LLM 推理资源暂时不足，请稍后重试"
         case .missingVocabularyWords(let words): return "生成文章缺少目标词：\(words.joined(separator: ", "))"
         }
+    }
+
+    /// 状态码含义参照 DeepSeek 错误码文档，其他 OpenAI 兼容服务基本一致。
+    private static func httpErrorDescription(_ code: Int, serverMessage: String?) -> String {
+        let detail = serverMessage.map { "：\($0)" } ?? ""
+        switch code {
+        case 400:
+            return "LLM 请求格式错误（HTTP 400）\(detail)"
+        case 401:
+            return "LLM API Key 无效（HTTP 401），请在设置中检查 API Key"
+        case 402:
+            return "LLM 账户余额不足（HTTP 402），请充值后重试"
+        case 403:
+            return "LLM 拒绝访问（HTTP 403），请确认 API Key 权限\(detail)"
+        case 404:
+            return "LLM 接口或模型不存在（HTTP 404），请检查 Base URL 和模型名称"
+        case 422:
+            return "LLM 请求参数错误（HTTP 422）\(detail)"
+        case 429:
+            return "LLM 请求速率达到上限（HTTP 429），请稍后重试"
+        case 502, 503, 504:
+            return "LLM 服务器繁忙（HTTP \(code)），请稍后重试"
+        case 500..<600:
+            return "LLM 服务器内部故障（HTTP \(code)），请稍后重试"
+        default:
+            return "LLM 请求失败（HTTP \(code)）\(detail)"
+        }
+    }
+
+    /// 从 OpenAI 兼容错误体 `{"error":{"message":...}}` 中提取说明，非 JSON 时截取原文。
+    private static func serverMessage(from body: String?) -> String? {
+        guard let body = body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty else { return nil }
+        if let data = body.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let error = json["error"] as? [String: Any],
+           let message = error["message"] as? String,
+           !message.isEmpty {
+            return String(message.prefix(200))
+        }
+        return String(body.prefix(200))
     }
 }
 

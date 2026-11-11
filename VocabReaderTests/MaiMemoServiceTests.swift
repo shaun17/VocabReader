@@ -43,6 +43,21 @@ final class MaiMemoServiceTests: XCTestCase {
         }
     }
 
+    func testServiceUnavailableErrorExplainsMaiMemoOutage() async {
+        let session = MockURLSession(data: Data(), statusCode: 503)
+        let service = MaiMemoService(token: "test-token", session: session)
+
+        do {
+            _ = try await service.fetchTodayWords()
+            XCTFail("Expected error")
+        } catch {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "墨墨服务暂时不可用（HTTP 503），可能正在维护或负载过高，请稍后重试"
+            )
+        }
+    }
+
     func testFetchDefinitionParsesFirstInterpretation() async throws {
         let json = """
         {"interpretations": [

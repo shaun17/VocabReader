@@ -16,7 +16,7 @@ final class SettingsConnectionDiagnosticsViewModelTests: XCTestCase {
 
         await viewModel.testMaiMemoConnection(using: MockMaiMemoConnectionTester(result: .failure(MaiMemoError.httpError(401))))
 
-        XCTAssertEqual(viewModel.maiMemoStatus, .failure("HTTP 错误 401"))
+        XCTAssertEqual(viewModel.maiMemoStatus, .failure("墨墨 API 认证失败（HTTP 401），请在设置中检查 Token 是否正确"))
     }
 
     func testLLMConnectionSuccessUpdatesStatus() async {

@@ -8,9 +8,29 @@ enum MaiMemoError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .httpError(let code): return "HTTP 错误 \(code)"
-        case .invalidResponse: return "无效的服务器响应"
+        case .httpError(let code): return Self.httpErrorDescription(code)
+        case .invalidResponse: return "墨墨 API 返回了无效的响应"
         case .apiError(let msg): return msg
+        }
+    }
+
+    /// 按状态码给出可操作的说明，避免首页只显示裸状态码。
+    private static func httpErrorDescription(_ code: Int) -> String {
+        switch code {
+        case 401:
+            return "墨墨 API 认证失败（HTTP 401），请在设置中检查 Token 是否正确"
+        case 403:
+            return "墨墨 API 拒绝访问（HTTP 403），请确认 Token 是否有效或权限是否足够"
+        case 404:
+            return "墨墨 API 接口不存在（HTTP 404），请稍后重试或更新应用"
+        case 429:
+            return "墨墨 API 请求过于频繁（HTTP 429），请稍后再试"
+        case 502, 503, 504:
+            return "墨墨服务暂时不可用（HTTP \(code)），可能正在维护或负载过高，请稍后重试"
+        case 500..<600:
+            return "墨墨服务器内部错误（HTTP \(code)），请稍后重试"
+        default:
+            return "墨墨 API 请求失败（HTTP \(code)）"
         }
     }
 }

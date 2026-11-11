@@ -45,6 +45,21 @@ final class LLMServiceTests: XCTestCase {
         }
     }
 
+    func testHTTPErrorDescriptionExplainsDeepSeekStatusCodes() {
+        XCTAssertEqual(
+            LLMError.httpError(503, #"{"error":{"message":"Server is busy","type":"server_error"}}"#).localizedDescription,
+            "LLM 服务器繁忙（HTTP 503），请稍后重试"
+        )
+        XCTAssertEqual(
+            LLMError.httpError(402, nil).localizedDescription,
+            "LLM 账户余额不足（HTTP 402），请充值后重试"
+        )
+        XCTAssertEqual(
+            LLMError.httpError(422, #"{"error":{"message":"max_tokens is too large"}}"#).localizedDescription,
+            "LLM 请求参数错误（HTTP 422）：max_tokens is too large"
+        )
+    }
+
     func testPromptIncludesAllWords() async throws {
         var capturedRequest: URLRequest?
         let json = """
