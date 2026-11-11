@@ -41,23 +41,27 @@ struct ArticleGenerationSettings: Equatable {
     let wordsPerArticle: Int
     let selectedTopic: ArticleTopic
     let enabledScenes: [ArticleScene]
+    let difficulty: ArticleDifficulty
 
     init(
         articleWordCount: Int,
         wordsPerArticle: Int,
         selectedTopic: ArticleTopic = .general,
-        enabledScenes: [ArticleScene] = ArticleScene.allCases
+        enabledScenes: [ArticleScene] = ArticleScene.allCases,
+        difficulty: ArticleDifficulty = .default
     ) {
         self.articleWordCount = articleWordCount
         self.wordsPerArticle = wordsPerArticle
         self.selectedTopic = selectedTopic
         self.enabledScenes = Self.normalizedEnabledScenes(enabledScenes)
+        self.difficulty = difficulty
     }
 
     /// 判断当前设置是否可以在不重载首页的前提下直接更新分页参数。
     func canUpdatePaginationInPlace(comparedTo previous: ArticleGenerationSettings) -> Bool {
         guard selectedTopic == previous.selectedTopic else { return false }
         guard enabledScenes == previous.enabledScenes else { return false }
+        guard difficulty == previous.difficulty else { return false }
         return articleWordCount != previous.articleWordCount || wordsPerArticle != previous.wordsPerArticle
     }
 

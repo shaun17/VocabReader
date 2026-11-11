@@ -109,10 +109,16 @@ final class LLMService {
     private static let connectionTestMaxTokens = 64
 
     private let config: LLMConfig
+    private let difficulty: ArticleDifficulty
     private let session: URLSessionProtocol
 
-    init(config: LLMConfig, session: URLSessionProtocol = URLSession.shared) {
+    init(
+        config: LLMConfig,
+        difficulty: ArticleDifficulty = .default,
+        session: URLSessionProtocol = URLSession.shared
+    ) {
         self.config = config
+        self.difficulty = difficulty
         self.session = session
     }
 
@@ -175,6 +181,7 @@ private extension LLMService {
         var bestDraft: ArticleDraftCandidate?
         let promptVocabulary = Self.promptVocabularyItems(for: words)
         let markerWordByID = Self.markerWordByID(from: promptVocabulary)
+        let markerIDByWordID = Self.markerIDByWordID(from: promptVocabulary)
         let markupParser = ArticleVocabularyMarkupParser()
 
         for _ in 1...Self.articleGenerationMaxAttempts(for: words.count) {
@@ -198,7 +205,8 @@ private extension LLMService {
                 title: cleanTitle,
                 body: markedBody.content,
                 occurrences: markedBody.occurrences,
-                missingWords: markedBody.missingWords
+                missingWords: markedBody.missingWords,
+                markerIDByWordID: markerIDByWordID
             )
 
             guard !draft.missingWords.isEmpty else {
@@ -226,7 +234,7 @@ private extension LLMService {
     /// 大批次按同一篇文章的连续段落生成，每段只负责一小组词，降低模型漏词概率。
     func generateSectionedArticle(words: [VocabWord], scene: ArticleScene, topic: ArticleTopic) async throws -> Article {
         let fullVocabulary = Self.promptVocabularyItems(for: words)
-        let sections = Self.chunked(fullVocabulary, size: Self.articleSectionWordLimit)
+        let sections = Self.balancedChunks(fullVocabulary, maxSize: Self.articleSectionWordLimit)
         var title = ""
         var combinedBody = ""
         var combinedOccurrences: [ArticleVocabularyOccurrence] = []
@@ -292,6 +300,7 @@ private extension LLMService {
         var bestDraft: ArticleDraftCandidate?
         let sectionWords = sectionVocabulary.map(\.word)
         let markerWordByID = Self.markerWordByID(from: sectionVocabulary)
+        let markerIDByWordID = Self.markerIDByWordID(from: sectionVocabulary)
         let markupParser = ArticleVocabularyMarkupParser()
 
         for _ in 1...Self.articleGenerationMaxAttempts(for: sectionWords.count) {
@@ -321,7 +330,8 @@ private extension LLMService {
                 title: cleanTitle,
                 body: markedBody.content,
                 occurrences: markedBody.occurrences,
-                missingWords: markedBody.missingWords
+                missingWords: markedBody.missingWords,
+                markerIDByWordID: markerIDByWordID
             )
 
             guard !draft.missingWords.isEmpty else { return draft }
@@ -354,6 +364,7 @@ private extension LLMService {
             "model": config.model,
             "max_tokens": config.articleMaxTokens,
             "messages": [
+                ["role": "system", "content": articleSystemPrompt()],
                 ["role": "user", "content": prompt]
             ]
         ]
@@ -395,6 +406,29 @@ private extension LLMService {
         return content
     }
 
+    /// 每次请求都不变的写作规则放进 system 消息，词表和本次任务放在 user 消息，便于服务端复用前缀缓存。
+    func articleSystemPrompt() -> String {
+        """
+        You write short English reading passages that help Chinese learners review vocabulary in context.
+
+        \(articleCoherenceInstruction())
+
+        \(naturalEnglishInstruction())
+
+        Target vocabulary rules:
+        - Use each target item in its most common core meaning that fits the topic, which is the meaning a learner is most likely studying. Avoid rare, archaic, slang, or highly technical senses, and do not use target items in puns.
+        - Each target item must appear as its original spelling or a natural inflected form, such as a plural, a verb tense, or a comparative. Do not replace it with a derived word of a different part of speech, for example "decision" for "decide".
+        - Spread the target items across the whole text. Do not turn the text into a vocabulary checklist or a word dump, and do not write a sentence that only exists to mention a word. Give each target item enough sentence context for a learner to understand how it is used in real communication.
+        - In the body, wrap the exact visible words that cover each target item with <vocab id="TARGET_ID">actual words in the text</vocab>. Use each TARGET_ID exactly as listed and mark every required item at least once. Never put <vocab> tags in the title.
+
+        Formatting rules:
+        - Do not use Markdown emphasis such as **bold** or __bold__, headings, bullet markers, or code formatting. The <vocab> tag is the only allowed inline markup.
+        - Do not define or explain the target words, and add no commentary outside the requested output tags.
+
+        Before answering, check that every sentence is grammatical, every required target item is present and tagged, and the text reads as one connected piece.
+        """
+    }
+
     /// 拼装分段生成 Prompt，保证每次只覆盖当前段词汇，同时延续前文主线。
     func buildArticleSectionPrompt(
         sectionVocabulary: [PromptVocabularyItem],
@@ -411,37 +445,49 @@ private extension LLMService {
         let sectionRole = sectionIndex == 1
             ? "Start Section \(sectionIndex) of \(sectionCount)"
             : "Continue the same article with Section \(sectionIndex) of \(sectionCount)"
+        let sectionName: String
+        switch sectionIndex {
+        case 1: sectionName = "opening"
+        case sectionCount: sectionName = "closing"
+        default: sectionName = "continuation"
+        }
         let outputInstruction = sectionIndex == 1
-            ? "Output the title on the first line, then a blank line, then this tagged opening section."
-            : "Output only this tagged continuation section. Do not add a new title."
+            ? "Output the title as <title>a short title of 3-8 words</title>, then this tagged opening section as <body>...</body>."
+            : "Output only this tagged \(sectionName) section as <body>...</body>. Do not add a new title."
         let planningInstruction = sectionIndex == 1
             ? "Before writing, silently choose one plausible central premise that gives every item in this full map a meaningful role."
             : "Use this full map to preserve the central premise and causal progression established by the opening section."
+        let plan = ArticleLengthPlan(targetWordCount: sectionVocabulary.count)
+        let isClosingSection = sectionIndex == sectionCount
+        var positionInstructions: [String] = []
+        if sectionIndex > 1 {
+            positionInstructions.append("Pick up exactly where the previous content stops; do not re-introduce the setting, speakers, or topic.")
+        }
+        positionInstructions.append(isClosingSection
+            ? "This is the closing section: bring the same situation to a clear resolution or conclusion."
+            : "This is not the last section: keep the situation open and do not conclude or resolve the article yet.")
 
         return """
         \(sectionRole) for one \(scene.promptDescription) about \(topic.promptDescription). \
         This is one article split into \(sectionCount) connected generation steps, not \(sectionCount) separate articles. \
         Full-article vocabulary map: \(targetVocabularyInstruction(for: fullVocabulary)). \
         Only the CURRENT SECTION items are coverage requirements for this response; the full map is planning context only. \
-        \(planningInstruction) Keep the same premise and causal progression in every section. \
+        \(planningInstruction) \
         The full article will cover \(totalWordCount) target vocabulary items; this section must cover ALL of these current-section items: \(targetVocabularyInstruction(for: sectionVocabulary)). \
-        In this section, wrap the exact visible words that cover each current-section target item with <vocab id="TARGET_ID">actual words in the article</vocab>. \
-        Use each TARGET_ID exactly as listed, and mark every current-section item at least once. \
-        \(sectionLengthInstruction(for: sectionVocabulary.count, sectionIndex: sectionIndex, sectionCount: sectionCount)) \
-        \(articleCoherenceInstruction()) \
+        \(difficulty.promptInstructions) \
+        Write around \(plan.wordRange.lowerBound)-\(plan.wordRange.upperBound) English words for this \(sectionName) section. \
+        \(scene.formatInstructions(for: plan, includesEnding: isClosingSection)) \
         Continue the same situation, question, explanation, or conflict. Do not restart, summarize, or switch topics between sections. \
-        \(previousBodyInstruction(previousBody)) \
-        \(scene.formatInstructions) \
+        \(positionInstructions.joined(separator: " ")) \
         \(topic.topicInstructions) \
-        \(topic.factConstraintInstructions) \
-        \(naturalEnglishInstruction()) \
-        Do not use Markdown emphasis such as **bold** or __bold__, headings, bullet markers, or code formatting. The <vocab> tag is the only allowed inline markup. \
-        \(missingSectionVocabularyInstruction(for: missingWords, previousDraft: previousDraft)) \
-        \(outputInstruction) No extra commentary.
+        \(topic.factConstraintInstructions)
+        \(previousBodyInstruction(previousBody))
+        \(missingSectionVocabularyInstruction(for: missingWords, previousDraft: previousDraft))
+        \(outputInstruction)
         """
     }
 
-    /// 拼装文章生成 Prompt，统一管理体裁、主题和真实性约束。
+    /// 拼装文章生成 Prompt，统一管理体裁、主题、难度、篇幅和真实性约束。
     func buildArticlePrompt(
         promptVocabulary: [PromptVocabularyItem],
         wordCount: Int,
@@ -450,26 +496,19 @@ private extension LLMService {
         missingWords: [VocabWord] = [],
         previousDraft: ArticleDraftCandidate? = nil
     ) -> String {
-        """
-        Write \(scene.promptDescription) about \(topic.promptDescription) that naturally incorporates \
-        ALL of these English vocabulary items: \(targetVocabularyInstruction(for: promptVocabulary)). \
-        Each target vocabulary item must appear in the article as its original spelling or a natural inflected form in the same word family. \
+        let plan = ArticleLengthPlan(targetWordCount: wordCount)
+        return """
+        Write \(scene.promptDescription) about \(topic.promptDescription). \
+        Target vocabulary items: \(targetVocabularyInstruction(for: promptVocabulary)). \
         The article as a whole must include ALL of the listed vocabulary words. \
-        In the article body, wrap the exact visible words that cover each target item with <vocab id="TARGET_ID">actual words in the article</vocab>. \
-        Use each TARGET_ID exactly as listed, and mark every target item at least once in the body. \
-        Do not put <vocab> tags in the title. \
-        \(articleLengthInstruction(for: wordCount)) \
+        \(difficulty.promptInstructions) \
+        Write around \(plan.wordRange.lowerBound)-\(plan.wordRange.upperBound) English words. \
+        \(scene.formatInstructions(for: plan)) \
         \(articlePlanningInstruction()) \
-        \(articleCoherenceInstruction()) \
-        Spread the vocabulary across the whole article. Do not turn the article into a vocabulary checklist, a word dump, or one sentence that only exists to mention words. \
-        Give each target word enough sentence context for a learner to understand how it is used in real communication. \
-        \(scene.formatInstructions) \
         \(topic.topicInstructions) \
-        \(topic.factConstraintInstructions) \
-        \(naturalEnglishInstruction()) \
-        The writing should flow naturally. Do not bold, mark, or explain the words separately. \
-        \(missingVocabularyInstruction(for: missingWords, previousDraft: previousDraft)) \
-        Output the title on the first line, then a blank line, then the tagged article body. No extra commentary.
+        \(topic.factConstraintInstructions)
+        \(missingVocabularyInstruction(for: missingWords, previousDraft: previousDraft))
+        Output the title as <title>a short title of 3-8 words</title>, then the tagged article body as <body>...</body>.
         """
     }
 
@@ -496,13 +535,13 @@ private extension LLMService {
         """
     }
 
-    /// 限制生成语言使用常见现代英语，同时允许目标词以自然搭配出现。
+    /// 要求语法准确、搭配地道；具体句式难度由阅读难度设置决定。
     func naturalEnglishInstruction() -> String {
         """
         Grammar, punctuation, and word usage must be accurate and natural. \
         Prefer vocabulary, grammar, and phrasing that are common in contemporary everyday English. \
         Use natural collocations and sentence patterns that fluent speakers would normally choose. \
-        Keep sentence structures clear and reusable for learners; avoid literary, archaic, overly formal, or needlessly complex constructions. \
+        Avoid literary, archaic, or needlessly convoluted constructions. \
         Never distort the meaning or grammar just to include a target word; choose a different sentence that uses it idiomatically.
         """
     }
@@ -512,31 +551,6 @@ private extension LLMService {
         items
             .map { "id=\($0.markerID), word=\($0.word.spelling)" }
             .joined(separator: "; ")
-    }
-
-    /// 按目标词数量给模型明确篇幅，避免词多时生成一两句硬塞词的短文。
-    func articleLengthInstruction(for wordCount: Int) -> String {
-        switch wordCount {
-        case ...10:
-            return "Write around 90-140 English words."
-        case 11...20:
-            return "Write around 150-220 English words."
-        case 21...30:
-            return "Write around 220-320 English words."
-        default:
-            return "Write around 300-430 English words."
-        }
-    }
-
-    /// 每个分段保持短而完整，让三段合并后仍接近一篇手机端可读短文。
-    func sectionLengthInstruction(for wordCount: Int, sectionIndex: Int, sectionCount: Int) -> String {
-        if sectionIndex == 1 {
-            return "Write around 70-110 English words for this opening section."
-        }
-        if sectionIndex == sectionCount {
-            return "Write around 70-110 English words for this closing section."
-        }
-        return "Write around 70-110 English words for this continuation section."
     }
 
     /// 把前文放进续写 Prompt，分隔清楚，避免模型把前文当成要重复输出的内容。
@@ -560,7 +574,7 @@ private extension LLMService {
         if let previousDraft, !previousDraft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return """
             Missing vocabulary words from the previous draft: \(missingWordList). \
-            Revise this previous draft instead of starting over, keep the same through-line, keep all already covered target words, and insert the missing words naturally into the same article. Return the full corrected article.
+            Revise this previous draft instead of starting over: keep the same through-line, keep every existing <vocab> tag, and insert the missing words naturally into the same article. Return the full corrected article in the same tagged format.
             Previous draft:
             \"\"\"
             \(previousDraft.formattedText)
@@ -585,11 +599,11 @@ private extension LLMService {
         if let previousDraft, !previousDraft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return """
             Missing vocabulary words from the previous section draft: \(missingWordList). \
-            Revise only this section draft, preserve its connection to the established through-line, keep all already covered current-section target words, and insert the missing words naturally. \
+            Revise only this section draft, preserve its connection to the established through-line, keep every existing <vocab> tag, and insert the missing words naturally. \
             Return the full corrected section. Do not repeat previous article content or add a title.
             Previous section draft:
             \"\"\"
-            \(previousDraft.body)
+            \(previousDraft.taggedBody)
             \"\"\"
             """
         }
@@ -613,15 +627,31 @@ private struct ArticleDraftCandidate {
     let body: String
     let occurrences: [ArticleVocabularyOccurrence]
     let missingWords: [VocabWord]
+    var markerIDByWordID: [String: String] = [:]
 
-    /// 给重试 Prompt 提供一份干净草稿，让模型在同一篇文章内修订，而不是重新随机生成。
+    /// 把已覆盖的目标词重新套上 <vocab> 标签，重试时模型只需补缺词，不必重新标注已有的词。
+    var taggedBody: String {
+        let nsBody = body as NSString
+        var result = ""
+        var location = 0
+        for occurrence in occurrences.sorted(by: { $0.range.location < $1.range.location }) {
+            guard
+                let markerID = markerIDByWordID[occurrence.word.id],
+                occurrence.range.location >= location,
+                NSMaxRange(occurrence.range) <= nsBody.length
+            else { continue }
+            result += nsBody.substring(with: NSRange(location: location, length: occurrence.range.location - location))
+            result += "<vocab id=\"\(markerID)\">\(nsBody.substring(with: occurrence.range))</vocab>"
+            location = NSMaxRange(occurrence.range)
+        }
+        result += nsBody.substring(from: location)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 给重试 Prompt 提供与要求输出一致的带标签草稿，让模型在同一篇文章内修订，而不是重新随机生成。
     var formattedText: String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !trimmedTitle.isEmpty else { return trimmedBody }
-        guard !trimmedBody.isEmpty else { return trimmedTitle }
-        return "\(trimmedTitle)\n\n\(trimmedBody)"
+        return "<title>\(trimmedTitle)</title>\n<body>\(taggedBody)</body>"
     }
 }
 
@@ -630,6 +660,15 @@ private extension LLMService {
     static func promptVocabularyItems(for words: [VocabWord]) -> [PromptVocabularyItem] {
         words.enumerated().map { index, word in
             PromptVocabularyItem(markerID: "w\(index + 1)", word: word)
+        }
+    }
+
+    /// 建立真实词条到短标记 ID 的映射，用于把重试草稿还原成带标签的文本。
+    static func markerIDByWordID(from items: [PromptVocabularyItem]) -> [String: String] {
+        items.reduce(into: [String: String]()) { result, item in
+            if result[item.word.id] == nil {
+                result[item.word.id] = item.markerID
+            }
         }
     }
 
@@ -696,16 +735,19 @@ private extension LLMService {
         return current
     }
 
-    /// 把大批次词汇拆成稳定的小段，降低单次 LLM 输出遗漏目标词的概率。
-    static func chunked<Element>(_ items: [Element], size: Int) -> [[Element]] {
-        guard size > 0 else { return [items] }
+    /// 把大批次词汇均分成不超过 maxSize 的小段，避免最后一段只剩一两个词却要写一整段。
+    static func balancedChunks<Element>(_ items: [Element], maxSize: Int) -> [[Element]] {
+        guard maxSize > 0, !items.isEmpty else { return [items] }
 
+        let chunkCount = (items.count + maxSize - 1) / maxSize
+        let baseSize = items.count / chunkCount
+        let largerChunkCount = items.count % chunkCount
         var chunks: [[Element]] = []
         var startIndex = 0
-        while startIndex < items.count {
-            let endIndex = min(startIndex + size, items.count)
-            chunks.append(Array(items[startIndex..<endIndex]))
-            startIndex = endIndex
+        for index in 0..<chunkCount {
+            let size = baseSize + (index < largerChunkCount ? 1 : 0)
+            chunks.append(Array(items[startIndex..<(startIndex + size)]))
+            startIndex += size
         }
         return chunks
     }
@@ -714,9 +756,12 @@ private extension LLMService {
 // MARK: - Parsing
 
 private extension LLMService {
-    /// 将 LLM 返回文本拆分为标题（第一行）和正文（剩余部分）。
+    /// 优先读取 <title>/<body> 标签；模型没按标签输出时退回“第一行标题、其余正文”的旧格式。
     static func parseTitleAndBody(from raw: String, scene: ArticleScene) -> (title: String, body: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let body = taggedContent("body", in: trimmed) {
+            return (normalizedTitle(taggedContent("title", in: trimmed) ?? ""), body)
+        }
         guard let firstNewline = trimmed.firstIndex(of: "\n") else {
             return ("", trimmed)
         }
@@ -733,9 +778,19 @@ private extension LLMService {
     /// 分段生成只有第一段允许带标题，后续段落全部按正文续写处理。
     static func parseSectionTitleAndBody(from raw: String, sectionIndex: Int, scene: ArticleScene) -> (title: String, body: String) {
         guard sectionIndex == 1 else {
-            return ("", raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return ("", taggedContent("body", in: trimmed) ?? trimmed)
         }
         return parseTitleAndBody(from: raw, scene: scene)
+    }
+
+    /// 取出 <tag>...</tag> 之间的内容；输出被截断缺少闭合标签时取到文本末尾。
+    static func taggedContent(_ tag: String, in text: String) -> String? {
+        guard let open = text.range(of: "<\(tag)>", options: .caseInsensitive) else { return nil }
+        let rest = text[open.upperBound...]
+        let close = rest.range(of: "</\(tag)>", options: .caseInsensitive)
+        return String(rest[..<(close?.lowerBound ?? rest.endIndex)])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 清掉模型偶尔写进标题的内部段落标记，避免用户看到生成步骤。

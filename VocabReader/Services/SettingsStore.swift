@@ -12,6 +12,7 @@ struct SettingsStoreStorage {
     let wordsPerArticleKey: String
     let selectedTopicKey: String
     let enabledScenesKey: String
+    let articleDifficultyKey: String
     let appearanceKey: String
     let speechEngineKey: String
     let phononVoiceKey: String
@@ -27,6 +28,7 @@ struct SettingsStoreStorage {
         wordsPerArticleKey: "wordsPerArticle",
         selectedTopicKey: "selectedArticleTopic",
         enabledScenesKey: "enabledArticleScenes",
+        articleDifficultyKey: "articleDifficulty",
         appearanceKey: "appAppearance",
         speechEngineKey: "speechEngine",
         phononVoiceKey: "phononVoice"
@@ -51,6 +53,7 @@ struct SettingsStoreStorage {
             wordsPerArticleKey: "vocabreader.tests.\(namespace).wordsPerArticle",
             selectedTopicKey: "vocabreader.tests.\(namespace).selectedArticleTopic",
             enabledScenesKey: "vocabreader.tests.\(namespace).enabledArticleScenes",
+            articleDifficultyKey: "vocabreader.tests.\(namespace).articleDifficulty",
             appearanceKey: "vocabreader.tests.\(namespace).appAppearance",
             speechEngineKey: "vocabreader.tests.\(namespace).speechEngine",
             phononVoiceKey: "vocabreader.tests.\(namespace).phononVoice"
@@ -69,6 +72,7 @@ final class SettingsStore: ObservableObject {
     @Published var wordsPerArticle: Int = 10
     @Published var selectedTopic: ArticleTopic = .general
     @Published var enabledScenes: [ArticleScene] = ArticleScene.allCases
+    @Published var articleDifficulty: ArticleDifficulty = .default
     @Published var appearance: AppAppearance = .system
     @Published var speechEngine: SpeechEngine = .system
     @Published var phononVoice: String = PhononVoice.defaultName
@@ -93,7 +97,8 @@ final class SettingsStore: ObservableObject {
             articleWordCount: articleWordCount,
             wordsPerArticle: wordsPerArticle,
             selectedTopic: selectedTopic,
-            enabledScenes: enabledScenes
+            enabledScenes: enabledScenes,
+            difficulty: articleDifficulty
         )
     }
 
@@ -112,6 +117,7 @@ final class SettingsStore: ObservableObject {
             wordsPerArticle: wordsPerArticle,
             selectedTopic: selectedTopic,
             enabledScenes: enabledScenes,
+            articleDifficulty: articleDifficulty,
             appearance: appearance,
             speechEngine: speechEngine,
             phononVoice: phononVoice
@@ -128,6 +134,7 @@ final class SettingsStore: ObservableObject {
         wordsPerArticle = Self.normalizedWordsPerArticle(draft.wordsPerArticle)
         selectedTopic = draft.selectedTopic
         enabledScenes = Self.normalizedEnabledScenes(draft.enabledScenes)
+        articleDifficulty = draft.articleDifficulty
         appearance = draft.appearance
         speechEngine = draft.speechEngine
         phononVoice = PhononVoice.normalizedName(draft.phononVoice)
@@ -143,6 +150,7 @@ final class SettingsStore: ObservableObject {
         storage.defaults.set(wordsPerArticle, forKey: storage.wordsPerArticleKey)
         storage.defaults.set(selectedTopic.rawValue, forKey: storage.selectedTopicKey)
         storage.defaults.set(enabledScenes.map(\.rawValue), forKey: storage.enabledScenesKey)
+        storage.defaults.set(articleDifficulty.rawValue, forKey: storage.articleDifficultyKey)
         storage.defaults.set(appearance.rawValue, forKey: storage.appearanceKey)
         storage.defaults.set(speechEngine.rawValue, forKey: storage.speechEngineKey)
         storage.defaults.set(phononVoice, forKey: storage.phononVoiceKey)
@@ -162,6 +170,8 @@ final class SettingsStore: ObservableObject {
         selectedTopic = ArticleTopic(rawValue: storedTopic ?? "") ?? .general
         let storedScenes = storage.defaults.stringArray(forKey: storage.enabledScenesKey) ?? []
         enabledScenes = Self.normalizedEnabledScenes(storedScenes.compactMap(ArticleScene.init(rawValue:)))
+        let storedDifficulty = storage.defaults.string(forKey: storage.articleDifficultyKey)
+        articleDifficulty = ArticleDifficulty(rawValue: storedDifficulty ?? "") ?? .default
         let storedAppearance = storage.defaults.string(forKey: storage.appearanceKey)
         appearance = AppAppearance(rawValue: storedAppearance ?? "") ?? .system
         let storedSpeechEngine = storage.defaults.string(forKey: storage.speechEngineKey)
