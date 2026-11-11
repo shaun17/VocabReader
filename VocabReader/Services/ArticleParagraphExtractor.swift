@@ -5,7 +5,7 @@ struct ArticleParagraphExtractor {
     func extract(from article: Article) -> [ArticleParagraph] {
         let normalizedContent = article.content.replacingOccurrences(of: "\r\n", with: "\n")
         let normalizedOccurrences = article.content == normalizedContent ? article.vocabularyOccurrences : []
-        if article.scene == .dialogue {
+        if article.scene.usesSpeakerLines {
             return extractDialogueBlocks(from: normalizedContent, occurrences: normalizedOccurrences)
         }
 
@@ -46,7 +46,7 @@ struct ArticleParagraphExtractor {
         return paragraphs
     }
 
-    /// 对话体裁按两行一组展示，同时保留每一行在原文里的位置用于 range 转换。
+    /// 对话、访谈体裁按两行一组展示，同时保留每一行在原文里的位置用于 range 转换。
     private func extractDialogueBlocks(
         from content: String,
         occurrences: [ArticleVocabularyOccurrence]

@@ -47,6 +47,16 @@ enum ReadingPalette {
         light: color(250, 245, 230),
         dark: color(38, 34, 30)
     )
+    /// 马克笔荧光黄：浅色模式与纸面正片叠底，深色模式用暗琥珀避免刺眼。
+    static let marker = adaptiveColor(
+        light: color(255, 200, 70),
+        dark: color(196, 142, 52)
+    )
+    /// 手绘卡片描边：比结构分隔线更深一档，像铅笔线。
+    static let sketchLine = adaptiveColor(
+        light: color(150, 136, 114),
+        dark: color(112, 102, 89)
+    )
     static let success = adaptiveColor(
         light: color(47, 107, 63),
         dark: color(130, 201, 143)
@@ -107,6 +117,12 @@ extension Color {
 
     /// 导航栏使用比正文背景略有层次的动态底色。
     static let readingNavigationBackground = Color(uiColor: ReadingPalette.navigationBackground)
+
+    /// 标题马克笔荧光底色。
+    static let readingMarker = Color(uiColor: ReadingPalette.marker)
+
+    /// 手绘卡片的铅笔描边色。
+    static let readingSketchLine = Color(uiColor: ReadingPalette.sketchLine)
 
     /// 成功反馈使用的动态绿色。
     static let readingSuccess = Color(uiColor: ReadingPalette.success)
@@ -249,66 +265,6 @@ private struct ReadingSupplementActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.82 : 1)
-    }
-}
-
-/// 不规则椭圆形卡片，和首页文章卡片保持同一套手绘纸片视觉。
-struct ReadingCardShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
-        let tl: CGFloat = min(w, h) * 0.12
-        let tr: CGFloat = min(w, h) * 0.18
-        let br: CGFloat = min(w, h) * 0.10
-        let bl: CGFloat = min(w, h) * 0.16
-
-        var path = Path()
-        path.move(to: CGPoint(x: tl, y: 0))
-        path.addQuadCurve(
-            to: CGPoint(x: w - tr, y: 0),
-            control: CGPoint(x: w * 0.5, y: -h * 0.012)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: w, y: tr),
-            control: CGPoint(x: w, y: 0)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: w, y: h - br),
-            control: CGPoint(x: w + w * 0.008, y: h * 0.5)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: w - br, y: h),
-            control: CGPoint(x: w, y: h)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: bl, y: h),
-            control: CGPoint(x: w * 0.5, y: h + h * 0.010)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: 0, y: h - bl),
-            control: CGPoint(x: 0, y: h)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: 0, y: tl),
-            control: CGPoint(x: -w * 0.006, y: h * 0.5)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: tl, y: 0),
-            control: CGPoint(x: 0, y: 0)
-        )
-        return path
-    }
-}
-
-/// 统一的阅读卡片底板，给首页文章卡片和收藏卡片复用。
-struct ReadingCardBackground: View {
-    var body: some View {
-        ReadingCardShape()
-            .fill(Color.readingCardFill)
-            .overlay {
-                ReadingCardShape()
-                    .stroke(Color.readingSeparator.opacity(0.72), lineWidth: 0.8)
-            }
     }
 }
 

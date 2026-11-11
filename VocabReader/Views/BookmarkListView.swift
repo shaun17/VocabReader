@@ -172,7 +172,7 @@ private struct BookmarkRow: View {
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            ReadingCardBackground()
+            ReadingCardBackground(seed: SketchSeed.make(word.id))
         }
     }
 

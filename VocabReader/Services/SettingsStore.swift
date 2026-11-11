@@ -12,6 +12,7 @@ struct SettingsStoreStorage {
     let wordsPerArticleKey: String
     let selectedTopicKey: String
     let enabledScenesKey: String
+    let knownScenesKey: String
     let articleDifficultyKey: String
     let appearanceKey: String
     let speechEngineKey: String
@@ -28,6 +29,7 @@ struct SettingsStoreStorage {
         wordsPerArticleKey: "wordsPerArticle",
         selectedTopicKey: "selectedArticleTopic",
         enabledScenesKey: "enabledArticleScenes",
+        knownScenesKey: "knownArticleScenes",
         articleDifficultyKey: "articleDifficulty",
         appearanceKey: "appAppearance",
         speechEngineKey: "speechEngine",
@@ -53,6 +55,7 @@ struct SettingsStoreStorage {
             wordsPerArticleKey: "vocabreader.tests.\(namespace).wordsPerArticle",
             selectedTopicKey: "vocabreader.tests.\(namespace).selectedArticleTopic",
             enabledScenesKey: "vocabreader.tests.\(namespace).enabledArticleScenes",
+            knownScenesKey: "vocabreader.tests.\(namespace).knownArticleScenes",
             articleDifficultyKey: "vocabreader.tests.\(namespace).articleDifficulty",
             appearanceKey: "vocabreader.tests.\(namespace).appAppearance",
             speechEngineKey: "vocabreader.tests.\(namespace).speechEngine",
@@ -150,6 +153,7 @@ final class SettingsStore: ObservableObject {
         storage.defaults.set(wordsPerArticle, forKey: storage.wordsPerArticleKey)
         storage.defaults.set(selectedTopic.rawValue, forKey: storage.selectedTopicKey)
         storage.defaults.set(enabledScenes.map(\.rawValue), forKey: storage.enabledScenesKey)
+        storage.defaults.set(ArticleScene.allCases.map(\.rawValue), forKey: storage.knownScenesKey)
         storage.defaults.set(articleDifficulty.rawValue, forKey: storage.articleDifficultyKey)
         storage.defaults.set(appearance.rawValue, forKey: storage.appearanceKey)
         storage.defaults.set(speechEngine.rawValue, forKey: storage.speechEngineKey)
@@ -168,8 +172,13 @@ final class SettingsStore: ObservableObject {
         wordsPerArticle = Self.normalizedWordsPerArticle(storedWordsPerArticle ?? 10)
         let storedTopic = storage.defaults.string(forKey: storage.selectedTopicKey)
         selectedTopic = ArticleTopic(rawValue: storedTopic ?? "") ?? .general
-        let storedScenes = storage.defaults.stringArray(forKey: storage.enabledScenesKey) ?? []
-        enabledScenes = Self.normalizedEnabledScenes(storedScenes.compactMap(ArticleScene.init(rawValue:)))
+        let storedScenes = (storage.defaults.stringArray(forKey: storage.enabledScenesKey) ?? [])
+            .compactMap(ArticleScene.init(rawValue:))
+        let knownScenes = storage.defaults.stringArray(forKey: storage.knownScenesKey)?
+            .compactMap(ArticleScene.init(rawValue:)) ?? ArticleScene.legacyCases
+        // 升级前保存过体裁选择的用户，新增体裁默认开启；从未保存过的直接走默认全选。
+        let addedScenes = storedScenes.isEmpty ? [] : ArticleScene.allCases.filter { !knownScenes.contains($0) }
+        enabledScenes = Self.normalizedEnabledScenes(storedScenes + addedScenes)
         let storedDifficulty = storage.defaults.string(forKey: storage.articleDifficultyKey)
         articleDifficulty = ArticleDifficulty(rawValue: storedDifficulty ?? "") ?? .default
         let storedAppearance = storage.defaults.string(forKey: storage.appearanceKey)

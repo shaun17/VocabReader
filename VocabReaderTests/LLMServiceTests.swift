@@ -377,6 +377,45 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(bodyString.contains("Keep the conversation on the same topic; do not abruptly switch subjects"))
     }
 
+    func testDialoguePromptAssignsNamedSpeakersInsteadOfLetterLabels() {
+        let plan = ArticleLengthPlan(targetWordCount: 10)
+        let speakers = SpeakerPair(first: "Priya", second: "Jonas")
+
+        let opening = ArticleScene.dialogue.formatInstructions(for: plan, speakers: speakers)
+        XCTAssertTrue(opening.contains("The two speakers are Priya and Jonas"))
+        XCTAssertTrue(opening.contains("label their turns exactly as \"Priya:\" and \"Jonas:\""))
+        XCTAssertTrue(opening.contains("Never use placeholder labels such as \"A:\""))
+
+        let continuation = ArticleScene.dialogue.formatInstructions(for: plan, includesEnding: false)
+        XCTAssertTrue(continuation.contains("Keep exactly the same speaker names used in the previous content"))
+
+        let interview = ArticleScene.interview.formatInstructions(for: plan, speakers: speakers)
+        XCTAssertTrue(interview.contains("The interviewer is Priya and the guest is Jonas"))
+    }
+
+    func testRandomSpeakerPairUsesTwoDifferentNamesFromPool() {
+        for _ in 0..<50 {
+            let pair = SpeakerPair.random()
+            XCTAssertNotEqual(pair.first, pair.second)
+            XCTAssertTrue(SpeakerPair.namePool.contains(pair.first))
+            XCTAssertTrue(SpeakerPair.namePool.contains(pair.second))
+        }
+    }
+
+    func testEveryTopicAndSceneHasPromptTextAndIcon() {
+        for topic in ArticleTopic.allCases {
+            XCTAssertFalse(topic.promptDescription.isEmpty, topic.rawValue)
+            XCTAssertFalse(topic.topicInstructions.isEmpty, topic.rawValue)
+            XCTAssertFalse(topic.systemImageName.isEmpty, topic.rawValue)
+        }
+        let plan = ArticleLengthPlan(targetWordCount: 10)
+        for scene in ArticleScene.allCases {
+            XCTAssertFalse(scene.promptDescription.isEmpty, scene.rawValue)
+            XCTAssertFalse(scene.formatInstructions(for: plan).isEmpty, scene.rawValue)
+            XCTAssertFalse(scene.systemImageName.isEmpty, scene.rawValue)
+        }
+    }
+
     func testGenerateArticleRetriesWhenResponseMissesRequiredWords() async throws {
         let firstJSON = """
         {
@@ -556,6 +595,26 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(article.content.hasPrefix("A: Your handling felt like a pistol"))
         XCTAssertEqual(article.vocabularyOccurrences.map(\.surfaceText), ["pistol", "humble", "chop"])
         XCTAssertEqual(session.requests.count, 1)
+    }
+
+    func testGenerateArticleTreatsNamedSpeakerOpeningLineAsBodyWhenTitleIsMissing() async throws {
+        let json = """
+        {
+          "choices": [{"message": {"role": "assistant", "content": "Priya: We should <vocab id=\\"1\\">chop</vocab> the plan.\\nJonas: Only if the customer agrees."}}]
+        }
+        """
+        let session = QueueingMockSession(responses: Array(repeating: (Data(json.utf8), 200), count: 3))
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(
+            words: [VocabWord(id: "1", spelling: "chop")],
+            scene: .interview,
+            topic: .customer
+        )
+
+        XCTAssertEqual(article.title, "")
+        XCTAssertTrue(article.content.hasPrefix("Priya: We should chop the plan."))
     }
 
     func testGenerateArticleStripsVocabularyMarkersFromTitleWithoutCountingTitleCoverage() async throws {
@@ -1042,12 +1101,18 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(prompts[2].contains("End with a useful outcome"))
     }
 
-    func testArticleScenesDoNotContainNews() {
-        XCTAssertEqual(Set(ArticleScene.allCases), Set([.dialogue, .science, .novel]))
+    func testNewsSceneStaysFictionalAndAvoidsRealPublicFigures() {
+        let instructions = ArticleScene.news.formatInstructions(for: ArticleLengthPlan(targetWordCount: 10))
+        XCTAssertTrue(instructions.contains("keep it clearly fictional"))
+        XCTAssertTrue(instructions.contains("do not attribute statements to real public figures"))
     }
 
     func testArticleTopicsCoverStrictFactThemes() {
-        XCTAssertEqual(Set(ArticleTopic.allCases), Set([.general, .technology, .medical, .ai, .customer]))
+        let strictTopics = Set(ArticleTopic.allCases.filter(\.requiresStrictFactConstraint))
+        XCTAssertEqual(
+            strictTopics,
+            Set([.psychology, .culture, .environment, .finance, .technology, .ai, .medical, .customer])
+        )
     }
 }
 
