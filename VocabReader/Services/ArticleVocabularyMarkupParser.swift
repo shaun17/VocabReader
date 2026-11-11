@@ -124,7 +124,11 @@ struct ArticleVocabularyMarkupParser {
 
         cleanContent += surfaceText
 
-        guard let word = targetWordByID[id], !surfaceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard
+            let word = targetWordByID[id],
+            !surfaceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            Self.surfaceText(surfaceText, plausiblyCovers: word)
+        else {
             return
         }
 
@@ -136,6 +140,35 @@ struct ArticleVocabularyMarkupParser {
             )
         )
         coveredWordIDs.insert(word.id)
+    }
+
+    /// 首字母完全不同的不规则变化，其余不规则形式（took、bought、children）首字母都与原形一致。
+    private static let suppletiveForms: [String: Set<String>] = [
+        "be": ["am", "is", "are", "was", "were"],
+        "go": ["went"],
+        "eat": ["ate"]
+    ]
+
+    /// 模型偶尔把标签套在无关的词上，这种标签不能算覆盖目标词。
+    /// 本地能证明的屈折变化直接通过；不规则变化无法穷举，只要求标签内有词与目标词首字母相同。
+    static func surfaceText(_ surfaceText: String, plausiblyCovers word: VocabWord) -> Bool {
+        if !TargetWordMatcher(targetWords: [word]).occurrences(in: surfaceText).isEmpty {
+            return true
+        }
+
+        let surfaceTokens = tokens(in: surfaceText)
+        guard let headWord = tokens(in: word.spelling).first, let initial = headWord.first else {
+            return true
+        }
+        let suppletive = suppletiveForms[headWord] ?? []
+        return surfaceTokens.contains { $0.first == initial || suppletive.contains($0) }
+    }
+
+    private static func tokens(in text: String) -> [String] {
+        let nsText = text as NSString
+        let regex = try? NSRegularExpression(pattern: TargetWordMatcher.wordPattern)
+        let matches = regex?.matches(in: text, range: NSRange(location: 0, length: nsText.length)) ?? []
+        return matches.map { nsText.substring(with: $0.range).lowercased() }
     }
 
     /// 清理没有成对命中的残留 vocab 标签，避免模型输出半截标签时污染正文。

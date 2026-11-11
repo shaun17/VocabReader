@@ -95,7 +95,7 @@ final class TodayViewModel: ObservableObject {
     private static func makeDefaultGenerator() -> TodayArticleGenerating {
         let settings = SettingsStore.shared
         let maiMemo = MaiMemoService(token: settings.maiMemoToken)
-        let llm = LLMService(config: settings.llmConfig)
+        let llm = LLMService(config: settings.llmConfig, difficulty: settings.articleDifficulty)
         return ArticleGenerator(
             maiMemo: maiMemo,
             llm: llm,

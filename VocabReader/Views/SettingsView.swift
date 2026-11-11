@@ -192,6 +192,21 @@ struct SettingsView: View {
 
         SettingsHint("至少保留一种体裁，生成时会在已选体裁中轮换")
 
+        SettingsFieldLabel("阅读难度")
+
+        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
+            ForEach(ArticleDifficulty.allCases) { difficulty in
+                SettingsChoiceButton(
+                    title: difficulty.rawValue,
+                    isSelected: draft.articleDifficulty == difficulty
+                ) {
+                    draft.articleDifficulty = difficulty
+                }
+            }
+        }
+
+        SettingsHint(draft.articleDifficulty.hint)
+
         SettingsDivider()
 
         VStack(spacing: 0) {

@@ -114,3 +114,18 @@
 - 发布版本：当前上传包版本为 `1.0 (202604132150)`。
 - 归档结果：`xcodebuild archive -allowProvisioningUpdates` 成功，归档路径为 `/tmp/VocabReader-AppStoreConnect.xcarchive`，签名身份为 `Apple Development: ren wen (4HXCVF58F5)`，团队为 `N4TQ2P9B46`。
 - 上传结果：`xcodebuild -exportArchive` 使用 `method = app-store-connect` 和 `destination = upload` 成功上传，终态为 `Uploaded package is processing.`，分发日志路径为 `/var/folders/3d/68946v9n4h17f9hfg4_862d80000gn/T/VocabReader_2026-04-13_21-55-56.548.xcdistributionlogs`。
+
+## 2026-11-11 VocabReader 1.1.0 上传 App Store Connect
+
+- [x] 保留现有发布准备改动，确认 Release 版本、团队与 Bundle ID
+- [x] 完成 Release 归档并校验包内元数据、arm64 架构与签名
+- [x] 完成 App Store Connect 上传，保存归档与分发日志
+
+### Review
+
+- 最终版本：`1.1.0 (15)`，Bundle ID 为 `com.vocabreader.app`，团队为 `N4TQ2P9B46`。首次上传 `1.1.0 (14)` 被拒，原因原文为 `The bundle version must be higher than the previously uploaded version: ‘14’.`；按发布授权将 `project.yml` 与 `VocabReader.xcodeproj/project.pbxproj` 的构建号同步递增至 `15`，版本号保持 `1.1.0`。
+- 归档结果：`xcodebuild archive -allowProvisioningUpdates` 成功，归档路径为 `/tmp/VocabReader-1.1.0-15.xcarchive`；归档签名为 `Apple Development: ren wen (4HXCVF58F5)`，导出后的分发签名为 `Apple Distribution: ren wen (N4TQ2P9B46)`。两阶段均通过 `codesign --verify --deep --strict`，分发包 `get-task-allow = false`。
+- 包内核查：版本为 `1.1.0 (15)`，架构为 `arm64`，`ITSAppUsesNonExemptEncryption = false`；Phonon 使用 Release 下载地址，未内置 Debug 模型。
+- 上传结果：`xcodebuild -exportArchive` 使用 `method = app-store-connect`、`destination = upload` 与自动签名成功，终态为 `Uploaded package is processing.`、`Upload succeeded.`、`EXPORT SUCCEEDED`。Apple 后续处理完成状态尚未核查，未提交审核或修改商店元数据。
+- 证据路径：`/tmp/VocabReader-1.1.0-release/` 下保存 `archive.log`、`upload.log`、两阶段签名核查 JSON 和 `distribution-15.xcdistributionlogs`；首次构建及拒绝日志保存在同目录的 `archive-14.log`、`upload-14.log` 与 `distribution-14.xcdistributionlogs`。
+- 验证边界：本次完成最终 Release 编译归档、包内元数据与签名校验及真实上传；未重跑单元测试或模拟器交互验证，未执行 Git 提交、推送或分支操作。

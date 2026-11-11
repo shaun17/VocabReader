@@ -56,6 +56,8 @@
 		A18D9BF0E481B1B99FDEA59E /* ArticleReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E71407948724FBACAC34100 /* ArticleReaderView.swift */; };
 		A3A00FF4889AB6F61E73CA99 /* WordDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C27C4F167C495819C060DE /* WordDetailViewModel.swift */; };
 		A5F3EDF1B78219F2872F0994 /* ArticleGenerationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D86451E0498C344050332AE /* ArticleGenerationSettings.swift */; };
+		B5C024EDAB127078E51CC7A4 /* ArticleLengthPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7B65C53FF9E2B606590DAFA /* ArticleLengthPlan.swift */; };
+		BE47A45BE72FAB657309DAEF /* AudioSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06EF671F0E49BE122CDE45C7 /* AudioSessionManager.swift */; };
 		BFB1ADB7BC141B3553CBAD79 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A538E0E5DF5E0A3060ABB964 /* AppAppearance.swift */; };
 		C1C62EECC0486B33BAE72404 /* ArticleScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953ED79C948B09D4A7938718 /* ArticleScene.swift */; };
 		C46B182DE4A9DEE980627B61 /* ArticlePlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E25A656991D176E7EAF8BD /* ArticlePlayerBar.swift */; };
@@ -68,6 +70,7 @@
 		D5B6AAA6FB2068DA9C581027 /* ArticleParagraphTranslationViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19FD551698D34EF3AF0F995 /* ArticleParagraphTranslationViewModelTests.swift */; };
 		E04F87C91A5DEDB2F4EB93D9 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975EB56D65816D3BAEA72FF7 /* SettingsStore.swift */; };
 		E643868534C51D9B5DCF6602 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B063B2A0F234B614A8D8A756 /* Assets.xcassets */; };
+		E77448FCAA8EF2F5A72A8433 /* ArticleDifficulty.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4950010FCE1680E8C0F2C104 /* ArticleDifficulty.swift */; };
 		E98AF08372776E0AF462D608 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */; };
 		FBA4D211A8C4ADA9DD6D7DB6 /* TodayViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E5FEC4B037D8B7C558F85C /* TodayViewModelTests.swift */; };
 		FFF573B0D331AF4157990E85 /* MaiMemoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD124C687676564664A87744 /* MaiMemoService.swift */; };
@@ -85,6 +88,7 @@
 
 /* Begin PBXFileReference section */
 		0135BEC1FC11DD7D6E988848 /* VocabReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabReaderTests.swift; sourceTree = "<group>"; };
+		06EF671F0E49BE122CDE45C7 /* AudioSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionManager.swift; sourceTree = "<group>"; };
 		083B5784B62E15879F34754F /* ArticleVocabularyMarkupParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleVocabularyMarkupParser.swift; sourceTree = "<group>"; };
 		0DCEFBBDB5C2427845EB19C6 /* AdaptiveSpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveSpeechService.swift; sourceTree = "<group>"; };
 		14A01C3E340AF195D685C2EC /* ArticleParagraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleParagraph.swift; sourceTree = "<group>"; };
@@ -106,6 +110,7 @@
 		3BDCC899222CE285D08267AB /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		45C27C4F167C495819C060DE /* WordDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDetailViewModel.swift; sourceTree = "<group>"; };
 		4739268EBCD05550370A003E /* AppAppearanceWindowBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceWindowBridgeTests.swift; sourceTree = "<group>"; };
+		4950010FCE1680E8C0F2C104 /* ArticleDifficulty.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleDifficulty.swift; sourceTree = "<group>"; };
 		4E3BF15991BBF4F61DCFAD7B /* WordTranslatorServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordTranslatorServiceTests.swift; sourceTree = "<group>"; };
 		4F0DE6EC868502C68C49A0BB /* ArticleCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleCardView.swift; sourceTree = "<group>"; };
 		51D08F2F145DA5E41D0E90A7 /* WordTranslatorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordTranslatorService.swift; sourceTree = "<group>"; };
@@ -150,6 +155,7 @@
 		DE633BEFBE242598FEDA476F /* WordDetailViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordDetailViewModelTests.swift; sourceTree = "<group>"; };
 		E75D465F5752AC20620891EF /* SettingsChoiceFlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsChoiceFlowLayout.swift; sourceTree = "<group>"; };
 		EC5661239146076B6B01D7B3 /* SettingsDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsDraft.swift; sourceTree = "<group>"; };
+		F7B65C53FF9E2B606590DAFA /* ArticleLengthPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleLengthPlan.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -203,7 +209,9 @@
 			children = (
 				A538E0E5DF5E0A3060ABB964 /* AppAppearance.swift */,
 				588DF7FC3C78B7F1F47A0763 /* Article.swift */,
+				4950010FCE1680E8C0F2C104 /* ArticleDifficulty.swift */,
 				5D86451E0498C344050332AE /* ArticleGenerationSettings.swift */,
+				F7B65C53FF9E2B606590DAFA /* ArticleLengthPlan.swift */,
 				14A01C3E340AF195D685C2EC /* ArticleParagraph.swift */,
 				953ED79C948B09D4A7938718 /* ArticleScene.swift */,
 				65DA331F15AF3AA8461A53A3 /* ArticleTopic.swift */,
@@ -239,6 +247,7 @@
 				2A969EF4CF9F34DF79F0DBCE /* ArticleGenerator.swift */,
 				9ED003D2D18121638D154EF1 /* ArticleParagraphExtractor.swift */,
 				083B5784B62E15879F34754F /* ArticleVocabularyMarkupParser.swift */,
+				06EF671F0E49BE122CDE45C7 /* AudioSessionManager.swift */,
 				54F5653DC06B824E6459C9D3 /* BookmarkStore.swift */,
 				321F8F98C5E25C5CA0D4E8CF /* Keychain.swift */,
 				94ED66C0F0A28E8AA7897EB5 /* LLMService.swift */,
@@ -418,8 +427,10 @@
 				48E118247E47D69017186BDB /* ArticleAudioPlayerViewModel.swift in Sources */,
 				CDEA6407F6F1FDD9D16D6768 /* ArticleCardView.swift in Sources */,
 				46243450696032F95CEA4D20 /* ArticleContentFormatter.swift in Sources */,
+				E77448FCAA8EF2F5A72A8433 /* ArticleDifficulty.swift in Sources */,
 				A5F3EDF1B78219F2872F0994 /* ArticleGenerationSettings.swift in Sources */,
 				1921076B638B9904229A7854 /* ArticleGenerator.swift in Sources */,
+				B5C024EDAB127078E51CC7A4 /* ArticleLengthPlan.swift in Sources */,
 				92B93CCEE651897D214D56E0 /* ArticleParagraph.swift in Sources */,
 				732738859AD1CDF15BD4F224 /* ArticleParagraphExtractor.swift in Sources */,
 				6E611A2EEDAD1B43B223D2EC /* ArticleParagraphTranslationViewModel.swift in Sources */,
@@ -428,6 +439,7 @@
 				C1C62EECC0486B33BAE72404 /* ArticleScene.swift in Sources */,
 				D0813E7511E3D98BC2F54059 /* ArticleTopic.swift in Sources */,
 				307B9547685805AC31034FB2 /* ArticleVocabularyMarkupParser.swift in Sources */,
+				BE47A45BE72FAB657309DAEF /* AudioSessionManager.swift in Sources */,
 				CA3BE177E929E8D8A751E810 /* BookmarkListView.swift in Sources */,
 				3C09EF6B4A5661E7A7D46F04 /* BookmarkStore.swift in Sources */,
 				3778945C7663FA22EE9BDCB4 /* BookmarkedWord.swift in Sources */,
@@ -510,7 +522,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = N4TQ2P9B46;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = VocabReader/Info.plist;
@@ -518,7 +530,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.3;
+				MARKETING_VERSION = 1.1.0;
 				PHONON_MODELS_BASE_URL = "https://assets.wenmsg.fun/phonon/31m-en/v0.4.0";
 				PRODUCT_BUNDLE_IDENTIFIER = com.vocabreader.app;
 				SDKROOT = iphoneos;
@@ -687,7 +699,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = N4TQ2P9B46;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = VocabReader/Info.plist;
@@ -695,7 +707,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.3;
+				MARKETING_VERSION = 1.1.0;
 				PHONON_MODELS_BASE_URL = "http://localhost:8765";
 				PRODUCT_BUNDLE_IDENTIFIER = com.vocabreader.app;
 				SDKROOT = iphoneos;

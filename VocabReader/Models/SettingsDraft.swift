@@ -9,6 +9,7 @@ struct SettingsDraft: Equatable {
     var wordsPerArticle: Int
     var selectedTopic: ArticleTopic
     var enabledScenes: [ArticleScene]
+    var articleDifficulty: ArticleDifficulty = .default
     var appearance: AppAppearance = .system
     var speechEngine: SpeechEngine = .system
     var phononVoice: String = PhononVoice.defaultName

@@ -60,7 +60,7 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
 
     func stop() {
         generation &+= 1
-        speechService.stop()
+        speechService.deactivate()
         playbackState = .idle
         currentParagraphIndex = nil
         progress = 0
@@ -139,6 +139,7 @@ final class ArticleAudioPlayerViewModel: ObservableObject {
         if next < paragraphs.count {
             startPlaying(from: next)
         } else {
+            speechService.deactivate()
             playbackState = .idle
             currentParagraphIndex = nil
             progress = 0

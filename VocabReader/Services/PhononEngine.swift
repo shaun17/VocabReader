@@ -93,13 +93,14 @@ final class PhononEngine: ObservableObject, @unchecked Sendable {
         previewVoice.withLock { $0 = name }
         previewingVoice = name
         previewService.speak(Self.previewText, rate: 0.5, onProgress: { _ in }, onFinish: { [weak self] in
+            self?.previewService?.deactivate()
             self?.previewingVoice = nil
         })
     }
 
     @MainActor
     func stopPreview() {
-        previewService?.stop()
+        previewService?.deactivate()
         previewingVoice = nil
     }
 

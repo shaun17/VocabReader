@@ -189,7 +189,7 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(bodyString.contains("Continue the same article with Section 3 of 3"))
         XCTAssertTrue(bodyString.contains("This is one article split into 3 connected generation steps"))
         XCTAssertTrue(bodyString.contains("The full article will cover 30 target vocabulary items"))
-        XCTAssertTrue(bodyString.contains("Write around 70-110 English words for this closing section"))
+        XCTAssertTrue(bodyString.contains("Write around 160-220 English words for this closing section"))
         XCTAssertTrue(bodyString.contains("Do not restart, summarize, or switch topics between sections"))
         XCTAssertTrue(bodyString.contains("Previous article content:"))
         XCTAssertTrue(bodyString.contains("Do not write isolated example sentences"))
@@ -247,9 +247,9 @@ final class LLMServiceTests: XCTestCase {
         let words = [VocabWord(id: "phrase-raw-id", spelling: "take off")] +
             (2...21).map { VocabWord(id: "raw-\($0)", spelling: "word\($0)") }
         let responses = [
-            "Linked Flight\\n\\nThe plane <vocab id=\\\"w1\\\">took off</vocab> while \(taggedAliasWords(words[1..<10], startIndex: 2)) shaped the same plan.",
-            "Then \(taggedAliasWords(words[10..<20], startIndex: 11)) kept the team aligned.",
-            "Finally <vocab id=\\\"w21\\\">word21</vocab> closed the same decision."
+            "Linked Flight\\n\\nThe plane <vocab id=\\\"w1\\\">took off</vocab> while \(taggedAliasWords(words[1..<7], startIndex: 2)) shaped the same plan.",
+            "Then \(taggedAliasWords(words[7..<14], startIndex: 8)) kept the team aligned.",
+            "Finally \(taggedAliasWords(words[14..<21], startIndex: 15)) closed the same decision."
         ].map { content in
             """
             {
@@ -274,10 +274,10 @@ final class LLMServiceTests: XCTestCase {
     func testSectionRetryPromptRequestsOnlyTheCorrectedCurrentSection() async throws {
         let words = (1...21).map { VocabWord(id: "raw-\($0)", spelling: "word\($0)") }
         let responses = [
-            "Linked Plan\\n\\n\(taggedAliasWords(words[0..<9], startIndex: 1))",
-            "Linked Plan\\n\\n\(taggedAliasWords(words[0..<10], startIndex: 1))",
-            taggedAliasWords(words[10..<20], startIndex: 11),
-            "<vocab id=\\\"w21\\\">word21</vocab>"
+            "Linked Plan\\n\\n\(taggedAliasWords(words[0..<6], startIndex: 1))",
+            "Linked Plan\\n\\n\(taggedAliasWords(words[0..<7], startIndex: 1))",
+            taggedAliasWords(words[7..<14], startIndex: 8),
+            taggedAliasWords(words[14..<21], startIndex: 15)
         ].map { content in
             """
             {
@@ -295,6 +295,7 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertTrue(retryPrompt.contains("Return the full corrected section"))
         XCTAssertTrue(retryPrompt.contains("Do not repeat previous article content"))
         XCTAssertFalse(retryPrompt.contains("Return the full corrected article"))
+        XCTAssertTrue(retryPrompt.contains(#"<vocab id="w6">word6</vocab>"#), "重试草稿要保留已有标签")
     }
 
     /// 确保 Prompt 把短文定义成一条连续主线，而不是一组互不相干的例句。
@@ -407,7 +408,7 @@ final class LLMServiceTests: XCTestCase {
         let secondBody = try XCTUnwrap(session.requests.last?.httpBody)
         let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondBody) as? [String: Any])
         let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
-        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        let retryPrompt = try XCTUnwrap(messages.last?["content"] as? String)
         XCTAssertTrue(retryPrompt.contains("Missing vocabulary words from the previous draft: river"))
     }
 
@@ -442,9 +443,9 @@ final class LLMServiceTests: XCTestCase {
         let secondBody = try XCTUnwrap(session.requests.last?.httpBody)
         let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondBody) as? [String: Any])
         let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
-        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        let retryPrompt = try XCTUnwrap(messages.last?["content"] as? String)
         XCTAssertTrue(retryPrompt.contains("Revise this previous draft"))
-        XCTAssertTrue(retryPrompt.contains("The apple stayed on the desk."))
+        XCTAssertTrue(retryPrompt.contains(#"The <vocab id="w1">apple</vocab> stayed on the desk."#))
     }
 
     /// 大批次也必须基于同一篇草稿修订，避免拆成互不相关的片段后再拼接。
@@ -477,9 +478,9 @@ final class LLMServiceTests: XCTestCase {
         let secondRequestBody = try XCTUnwrap(session.requests.last?.httpBody)
         let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondRequestBody) as? [String: Any])
         let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
-        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        let retryPrompt = try XCTUnwrap(messages.last?["content"] as? String)
         XCTAssertTrue(retryPrompt.contains("Revise this previous draft"))
-        XCTAssertTrue(retryPrompt.contains("word1 leads the plan"))
+        XCTAssertTrue(retryPrompt.contains(#"<vocab id="w1">word1</vocab> leads the plan"#))
     }
 
     func testGenerateArticleAcceptsInflectedTargetWordForms() async throws {
@@ -656,7 +657,7 @@ final class LLMServiceTests: XCTestCase {
         let secondBody = try XCTUnwrap(session.requests.last?.httpBody)
         let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondBody) as? [String: Any])
         let messages = try XCTUnwrap(secondObject["messages"] as? [[String: Any]])
-        let retryPrompt = try XCTUnwrap(messages.first?["content"] as? String)
+        let retryPrompt = try XCTUnwrap(messages.last?["content"] as? String)
         XCTAssertTrue(retryPrompt.contains("Missing vocabulary words from the previous draft: take off"))
     }
 
@@ -854,7 +855,7 @@ final class LLMServiceTests: XCTestCase {
 
         let body = try XCTUnwrap(capturedRequest?.httpBody)
         let bodyString = String(data: body, encoding: .utf8) ?? ""
-        XCTAssertTrue(bodyString.contains("Use 3-5 short narrative paragraphs separated by blank lines"))
+        XCTAssertTrue(bodyString.contains("Use 2-3 short narrative paragraphs separated by blank lines"))
         XCTAssertTrue(bodyString.contains("Grammar, punctuation, and word usage must be accurate and natural"))
         XCTAssertTrue(bodyString.contains("The article as a whole must include ALL of the listed vocabulary words"))
     }
@@ -931,6 +932,116 @@ final class LLMServiceTests: XCTestCase {
         XCTAssertFalse(bodyString.contains("If the format is dialogue, treat each dialogue block as a paragraph"))
     }
 
+    /// 固定写作规则放在 system 消息，词表和本次任务放在 user 消息。
+    func testArticlePromptSeparatesFixedRulesFromVocabularyTask() async throws {
+        var capturedRequest: URLRequest?
+        let json = #"{"choices": [{"message": {"role": "assistant", "content": "<title>Fresh Fruit</title>\n<body>The <vocab id=\"w1\">apple</vocab> stayed fresh.</body>"}}]}"#
+        let session = CapturingMockSession(data: Data(json.utf8), statusCode: 200) { capturedRequest = $0 }
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        _ = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .novel, topic: .general)
+
+        let messages = try requestMessages(XCTUnwrap(capturedRequest))
+        XCTAssertEqual(messages.map { $0["role"] as? String }, ["system", "user"])
+        let system = try XCTUnwrap(messages[0]["content"] as? String)
+        let user = try XCTUnwrap(messages[1]["content"] as? String)
+        XCTAssertFalse(system.contains("word=apple"))
+        XCTAssertTrue(user.contains("id=w1, word=apple"))
+        XCTAssertTrue(system.contains("most common core meaning"))
+        XCTAssertTrue(system.contains("Do not replace it with a derived word"))
+        XCTAssertTrue(system.contains("The <vocab> tag is the only allowed inline markup"))
+        XCTAssertFalse(system.contains("mark, or explain"))
+        XCTAssertTrue(user.contains("<title>"))
+    }
+
+    /// 阅读难度来自设置，按 CEFR 等级约束句式，默认 B1。
+    func testArticlePromptUsesConfiguredDifficulty() async throws {
+        let json = #"{"choices": [{"message": {"role": "assistant", "content": "Fresh Fruit\n\nThe <vocab id=\"w1\">apple</vocab> stayed fresh."}}]}"#
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+
+        let advancedSession = QueueingMockSession(responses: [(Data(json.utf8), 200)])
+        _ = try await LLMService(config: config, difficulty: .advanced, session: advancedSession)
+            .generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .science, topic: .general)
+        XCTAssertTrue(try requestPrompt(advancedSession.requests[0]).contains("CEFR C1"))
+
+        let defaultSession = QueueingMockSession(responses: [(Data(json.utf8), 200)])
+        _ = try await LLMService(config: config, session: defaultSession)
+            .generateArticle(words: [VocabWord(id: "1", spelling: "apple")], scene: .science, topic: .general)
+        XCTAssertTrue(try requestPrompt(defaultSession.requests[0]).contains("CEFR B1"))
+    }
+
+    /// 标签格式输出要正确拆出标题和正文，正文跨多段也不丢。
+    func testGenerateArticleParsesTaggedTitleAndBody() async throws {
+        let json = #"{"choices": [{"message": {"role": "assistant", "content": "<title>Morning Walk</title>\n<body>The <vocab id=\"w1\">river</vocab> was calm.\n\nWe kept walking.</body>"}}]}"#
+        let session = QueueingMockSession(responses: [(Data(json.utf8), 200)])
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(words: [VocabWord(id: "1", spelling: "river")], scene: .novel, topic: .general)
+
+        XCTAssertEqual(article.title, "Morning Walk")
+        XCTAssertEqual(article.content, "The river was calm.\n\nWe kept walking.")
+        XCTAssertEqual(article.vocabularyOccurrences.map(\.surfaceText), ["river"])
+    }
+
+    /// 目标词越多，篇幅和段落数越多，单词密度保持在每 16-22 个英文单词一个目标词。
+    func testLengthPlanScalesWithTargetWordCount() {
+        let small = ArticleLengthPlan(targetWordCount: 5)
+        let medium = ArticleLengthPlan(targetWordCount: 10)
+        let large = ArticleLengthPlan(targetWordCount: 20)
+
+        XCTAssertEqual(small.wordRange, 90...140)
+        XCTAssertEqual(medium.wordRange, 160...220)
+        XCTAssertEqual(large.wordRange, 320...440)
+        XCTAssertLessThan(small.paragraphRange.upperBound, large.paragraphRange.lowerBound)
+        XCTAssertLessThan(medium.dialogueTurnRange.upperBound, large.dialogueTurnRange.lowerBound)
+        XCTAssertGreaterThanOrEqual(ArticleLengthPlan(targetWordCount: 1).paragraphRange.lowerBound, 2)
+    }
+
+    /// 标签套在无关词上不算覆盖；不规则变化和短语变形仍然接受。
+    func testVocabularyTagMustPlausiblyMatchTargetWord() {
+        let parser = ArticleVocabularyMarkupParser()
+        let apple = VocabWord(id: "1", spelling: "apple")
+
+        let misTagged = parser.parse(content: #"The <vocab id="1">river</vocab> was cold."#, targetWords: [apple])
+        XCTAssertEqual(misTagged.missingWords, [apple])
+        XCTAssertEqual(misTagged.content, "The river was cold.")
+
+        XCTAssertTrue(ArticleVocabularyMarkupParser.surfaceText("took off", plausiblyCovers: VocabWord(id: "2", spelling: "take off")))
+        XCTAssertTrue(ArticleVocabularyMarkupParser.surfaceText("bought", plausiblyCovers: VocabWord(id: "3", spelling: "buy")))
+        XCTAssertTrue(ArticleVocabularyMarkupParser.surfaceText("went", plausiblyCovers: VocabWord(id: "4", spelling: "go")))
+        XCTAssertTrue(ArticleVocabularyMarkupParser.surfaceText("the apples", plausiblyCovers: apple))
+        XCTAssertFalse(ArticleVocabularyMarkupParser.surfaceText("decision", plausiblyCovers: VocabWord(id: "5", spelling: "choose")))
+    }
+
+    /// 分段按词数均分，21 词拆成 7/7/7，而不是 10/10/1。
+    func testSectionedArticleSplitsVocabularyEvenly() async throws {
+        let words = (1...21).map { VocabWord(id: "raw-\($0)", spelling: "word\($0)") }
+        let responses = [
+            "Plan\\n\\n\(taggedAliasWords(words[0..<7], startIndex: 1))",
+            taggedAliasWords(words[7..<14], startIndex: 8),
+            taggedAliasWords(words[14..<21], startIndex: 15)
+        ].map { #"{"choices": [{"message": {"role": "assistant", "content": "\#($0)"}}]}"# }
+        let session = QueueingMockSession(responses: responses.map { (Data($0.utf8), 200) })
+        let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "gpt-4o")
+        let service = LLMService(config: config, session: session)
+
+        let article = try await service.generateArticle(words: words, scene: .dialogue, topic: .general)
+
+        XCTAssertEqual(article.vocabularyOccurrences.count, 21)
+        let prompts = try session.requests.map { try requestPrompt($0) }
+        XCTAssertTrue(prompts[0].contains("this section must cover ALL of these current-section items: id=w1, word=word1; id=w2, word=word2; id=w3, word=word3; id=w4, word=word4; id=w5, word=word5; id=w6, word=word6; id=w7, word=word7."))
+        XCTAssertTrue(prompts[2].contains("id=w15, word=word15"))
+
+        // 只有最后一段要求收尾，中间段落保持开放。
+        XCTAssertTrue(prompts[0].contains("do not conclude or resolve the article yet"))
+        XCTAssertFalse(prompts[0].contains("End with a useful outcome"))
+        XCTAssertTrue(prompts[1].contains("do not re-introduce the setting"))
+        XCTAssertTrue(prompts[2].contains("This is the closing section"))
+        XCTAssertTrue(prompts[2].contains("End with a useful outcome"))
+    }
+
     func testArticleScenesDoNotContainNews() {
         XCTAssertEqual(Set(ArticleScene.allCases), Set([.dialogue, .science, .novel]))
     }
@@ -981,12 +1092,17 @@ private extension LLMServiceTests {
         .joined(separator: ", ")
     }
 
-    /// 从 mock 请求体里取出最终发送给模型的 Prompt。
+    /// 从 mock 请求体里取出最终发送给模型的 Prompt，system 与 user 消息按顺序拼接。
     func requestPrompt(_ request: URLRequest) throws -> String {
+        try requestMessages(request)
+            .compactMap { $0["content"] as? String }
+            .joined(separator: "\n")
+    }
+
+    func requestMessages(_ request: URLRequest) throws -> [[String: Any]] {
         let body = try XCTUnwrap(request.httpBody)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        let messages = try XCTUnwrap(object["messages"] as? [[String: Any]])
-        return try XCTUnwrap(messages.first?["content"] as? String)
+        return try XCTUnwrap(object["messages"] as? [[String: Any]])
     }
 }
 

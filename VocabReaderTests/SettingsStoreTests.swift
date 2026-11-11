@@ -124,6 +124,24 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.appearance, .system)
     }
 
+    /// 阅读难度保存后重启可恢复，历史版本没有该设置或存了未知值时使用中级。
+    func testArticleDifficultyPersistsAndDefaultsToIntermediate() {
+        XCTAssertEqual(SettingsStore(storage: storage).articleDifficulty, .intermediate)
+
+        let store = SettingsStore(storage: storage)
+        var draft = store.makeDraft()
+        draft.articleDifficulty = .upperIntermediate
+        store.apply(draft)
+        store.save()
+
+        let reloadedStore = SettingsStore(storage: storage)
+        XCTAssertEqual(reloadedStore.articleDifficulty, .upperIntermediate)
+        XCTAssertEqual(reloadedStore.articleGenerationSettings.difficulty, .upperIntermediate)
+
+        storage.defaults.set("unknown", forKey: storage.articleDifficultyKey)
+        XCTAssertEqual(SettingsStore(storage: storage).articleDifficulty, .intermediate)
+    }
+
     /// 历史版本没有朗读引擎设置时保持系统语音，不应在升级后自动加载大模型。
     func testMissingSpeechEngineDefaultsToSystem() {
         storage.defaults.set("unknown", forKey: storage.speechEngineKey)
@@ -269,6 +287,7 @@ final class SettingsStoreTests: XCTestCase {
         storage.defaults.removeObject(forKey: storage.wordsPerArticleKey)
         storage.defaults.removeObject(forKey: storage.selectedTopicKey)
         storage.defaults.removeObject(forKey: storage.enabledScenesKey)
+        storage.defaults.removeObject(forKey: storage.articleDifficultyKey)
         storage.defaults.removeObject(forKey: storage.appearanceKey)
         storage.defaults.removeObject(forKey: storage.speechEngineKey)
         storage.defaults.removeObject(forKey: storage.phononVoiceKey)
