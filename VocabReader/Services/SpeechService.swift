@@ -5,6 +5,8 @@ protocol SpeechServiceProtocol {
     func pause()
     func resume()
     func stop()
+    /// 停止朗读并交还音频会话；段落之间切换只调用 stop()，避免其他 App 的音乐短暂恢复。
+    func deactivate()
     var isSpeaking: Bool { get }
     var isPaused: Bool { get }
 }
@@ -19,7 +21,6 @@ final class SpeechService: NSObject, SpeechServiceProtocol {
     override init() {
         super.init()
         synthesizer.delegate = self
-        configureAudioSession()
     }
 
     var isSpeaking: Bool { synthesizer.isSpeaking }
@@ -36,6 +37,7 @@ final class SpeechService: NSObject, SpeechServiceProtocol {
         utterance.preUtteranceDelay = 0.1
         utterance.postUtteranceDelay = 0.2
         activeUtterance = utterance
+        AudioSessionManager.activate()
         synthesizer.speak(utterance)
     }
 
@@ -44,6 +46,7 @@ final class SpeechService: NSObject, SpeechServiceProtocol {
     }
 
     func resume() {
+        AudioSessionManager.activate()
         synthesizer.continueSpeaking()
     }
 
@@ -54,9 +57,9 @@ final class SpeechService: NSObject, SpeechServiceProtocol {
         synthesizer.stopSpeaking(at: .immediate)
     }
 
-    private func configureAudioSession() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-        try? AVAudioSession.sharedInstance().setActive(true)
+    func deactivate() {
+        stop()
+        AudioSessionManager.deactivate()
     }
 
     private static func preferredVoice() -> AVSpeechSynthesisVoice? {

@@ -43,6 +43,10 @@ final class AdaptiveSpeechService: SpeechServiceProtocol {
         active.stop()
     }
 
+    func deactivate() {
+        active.deactivate()
+    }
+
     private func resolveService() -> SpeechServiceProtocol {
         guard prefersPhonon(), let phonon = engine.phonon else { return system }
         if let phononService { return phononService }

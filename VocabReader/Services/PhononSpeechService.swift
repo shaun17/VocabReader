@@ -50,7 +50,6 @@ final class PhononSpeechService: SpeechServiceProtocol, @unchecked Sendable {
         engine.attach(timePitch)
         engine.connect(player, to: timePitch, format: format)
         engine.connect(timePitch, to: engine.mainMixerNode, format: format)
-        try engine.start()
     }
 
     deinit {
@@ -72,13 +71,7 @@ final class PhononSpeechService: SpeechServiceProtocol, @unchecked Sendable {
 
     func speak(_ text: String, rate: Float, onProgress: @escaping (Double) -> Void, onFinish: @escaping () -> Void) {
         stop()
-        if !engine.isRunning {
-            do {
-                try engine.start()
-            } catch {
-                Self.logger.error("Audio engine failed to start: \(String(describing: error))")
-            }
-        }
+        startEngineIfNeeded()
 
         let expected = state.withLock { state -> UInt in
             state.generatedSamples = 0
@@ -121,6 +114,7 @@ final class PhononSpeechService: SpeechServiceProtocol, @unchecked Sendable {
 
     func resume() {
         guard isSpeaking, isPaused else { return }
+        startEngineIfNeeded()
         player.play()
         isPaused = false
     }
@@ -135,6 +129,23 @@ final class PhononSpeechService: SpeechServiceProtocol, @unchecked Sendable {
         isSpeaking = false
         isPaused = false
         player.stop()
+    }
+
+    func deactivate() {
+        stop()
+        engine.stop()
+        AudioSessionManager.deactivate()
+    }
+
+    /// 引擎启动会占用音频会话，所以推迟到真正播放时才启动。
+    private func startEngineIfNeeded() {
+        AudioSessionManager.activate()
+        guard !engine.isRunning else { return }
+        do {
+            try engine.start()
+        } catch {
+            Self.logger.error("Audio engine failed to start: \(String(describing: error))")
+        }
     }
 
     /// 在锁内调度，保证 stop() 递增 generation 之后不会再有旧段落的音频排进播放队列。

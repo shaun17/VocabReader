@@ -433,4 +433,8 @@ private final class MockSpeechService: SpeechServiceProtocol {
         stopCallCount += 1
         isSpeaking = false
     }
+
+    func deactivate() {
+        stop()
+    }
 }
