@@ -138,7 +138,7 @@ struct SettingsView: View {
     private var appearanceSettingsContent: some View {
         SettingsFieldLabel("显示模式")
 
-        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
+        SettingsChoiceGrid() {
             ForEach(AppAppearance.allCases) { appearance in
                 SettingsChoiceButton(
                     title: appearance.title,
@@ -164,37 +164,38 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var articleSettingsContent: some View {
-        SettingsFieldLabel("文章主题")
-
-        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
-            ForEach(ArticleTopic.allCases) { topic in
-                SettingsChoiceButton(
-                    title: topic.rawValue,
-                    isSelected: draft.selectedTopic == topic
-                ) {
-                    draft.selectedTopic = topic
-                }
+        // 主题和体裁选项多，收进二级页；卡片里只保留一行当前值。
+        VStack(spacing: 0) {
+            NavigationLink {
+                ArticleTopicPickerView(selection: $draft.selectedTopic)
+            } label: {
+                SettingsNavigationRow(
+                    title: "文章主题",
+                    subtitle: draft.selectedTopic.summary,
+                    value: draft.selectedTopic.rawValue
+                )
             }
+            .buttonStyle(SettingsPressButtonStyle())
+
+            SettingsDivider()
+
+            NavigationLink {
+                ArticleScenePickerView(draft: $draft)
+            } label: {
+                SettingsNavigationRow(
+                    title: "文章体裁",
+                    subtitle: "生成时在已选体裁中轮换",
+                    value: ArticleScene.selectionSummary(draft.enabledScenes)
+                )
+            }
+            .buttonStyle(SettingsPressButtonStyle())
         }
 
-        SettingsFieldLabel("文章体裁")
-
-        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
-            ForEach(ArticleScene.allCases) { scene in
-                SettingsChoiceButton(
-                    title: scene.rawValue,
-                    isSelected: draft.isSceneEnabled(scene)
-                ) {
-                    draft.setSceneEnabled(!draft.isSceneEnabled(scene), for: scene)
-                }
-            }
-        }
-
-        SettingsHint("至少保留一种体裁，生成时会在已选体裁中轮换")
+        SettingsDivider()
 
         SettingsFieldLabel("阅读难度")
 
-        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
+        SettingsChoiceGrid() {
             ForEach(ArticleDifficulty.allCases) { difficulty in
                 SettingsChoiceButton(
                     title: difficulty.rawValue,
@@ -234,7 +235,7 @@ struct SettingsView: View {
     private var speechSettingsContent: some View {
         SettingsFieldLabel("语音引擎")
 
-        SettingsChoiceFlowLayout(horizontalSpacing: 6, verticalSpacing: 0) {
+        SettingsChoiceGrid() {
             ForEach(availableSpeechEngines) { engine in
                 SettingsChoiceButton(
                     title: engine.title,

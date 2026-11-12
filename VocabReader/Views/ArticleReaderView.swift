@@ -1,14 +1,12 @@
 import SwiftUI
-import Translation
 import UIKit
 
 struct ArticleReaderView: View {
     let article: Article
-    let translator: WordTranslatorServiceProtocol
+    let translator: WordLookupServiceProtocol
     let paragraphTranslator: ArticleParagraphTranslatorProtocol
 
-    @State private var translationText: String = ""
-    @State private var showTranslation = false
+    @State private var wordLookup: WordLookupRequest?
     @State private var showBookmarkToast = false
     @State private var bookmarkToastPresentationID = 0
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -18,7 +16,7 @@ struct ArticleReaderView: View {
     private let extractor = ArticleParagraphExtractor()
     private let paragraphs: [ArticleParagraph]
 
-    init(article: Article, translator: WordTranslatorServiceProtocol, paragraphTranslator: ArticleParagraphTranslatorProtocol) {
+    init(article: Article, translator: WordLookupServiceProtocol, paragraphTranslator: ArticleParagraphTranslatorProtocol) {
         self.article = article
         self.translator = translator
         self.paragraphTranslator = paragraphTranslator
@@ -31,14 +29,13 @@ struct ArticleReaderView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 24) {
-                        ArticleMetadataHeader(article: article)
+                    // 整篇文章是一张手绘纸片：首页那张卡片展开后的样子，同一个种子保证轮廓气质一致。
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ArticleSheetHeader(article: article, seed: articleSeed)
+                            .padding(.horizontal, 8)
 
-                        if !article.title.isEmpty {
-                            Text(article.title)
-                                .font(.system(.title, design: .serif).italic())
-                                .foregroundStyle(Color.readingTitle)
-                        }
+                        SketchDivider(seed: articleSeed &+ 3)
+                            .padding(.horizontal, 8)
 
                         ForEach(paragraphs) { paragraph in
                             ArticleParagraphSection(
@@ -46,10 +43,11 @@ struct ArticleReaderView: View {
                                 targetWords: article.targetWords,
                                 formatter: formatter,
                                 translator: paragraphTranslator,
+                                sketchSeed: articleSeed &+ UInt64(paragraph.index + 1),
+                                emphasizesSpeakers: article.scene.usesSpeakerLines,
                                 isHighlighted: audioPlayer.currentParagraphIndex == paragraph.index,
-                                onWordTap: { spelling in
-                                    translationText = spelling
-                                    showTranslation = true
+                                onWordTap: { request in
+                                    wordLookup = request
                                 },
                                 onTapParagraph: {
                                     audioPlayer.playFromParagraph(paragraph.index)
@@ -65,7 +63,17 @@ struct ArticleReaderView: View {
                             .id(paragraph.index)
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 18)
+                    .background {
+                        ReadingCardBackground(seed: articleSeed)
+                    }
+                    // 展开屏上限制行宽，避免一行英文拉得过长。
+                    .frame(maxWidth: ArticleSheetMetrics.maxWidth)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+                    .padding(.bottom, 24)
                 }
                 .onChange(of: audioPlayer.currentParagraphIndex) { _, newIndex in
                     guard let newIndex else { return }
@@ -91,7 +99,6 @@ struct ArticleReaderView: View {
                     .allowsHitTesting(false)
             }
         }
-        .navigationTitle(article.scene.rawValue)
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear { audioPlayer.stop() }
         .task(id: bookmarkToastPresentationID) {
@@ -107,12 +114,17 @@ struct ArticleReaderView: View {
                 showBookmarkToast = false
             }
         }
-        .modifier(
-            TranslationPresentationCompatibilityModifier(
-                isPresented: $showTranslation,
-                text: translationText
+        .sheet(item: $wordLookup) { request in
+            WordLookupSheet(
+                request: request,
+                service: translator,
+                isArticleAudioActive: { [audioPlayer] in audioPlayer.playbackState != .idle }
             )
-        )
+        }
+    }
+
+    private var articleSeed: UInt64 {
+        SketchSeed.make(article.id)
     }
 
     /// 每次收藏都重新触发顶部提示；新的展示会自动取消上一轮 1 秒倒计时。
@@ -124,32 +136,71 @@ struct ArticleReaderView: View {
     }
 }
 
-private struct TranslationPresentationCompatibilityModifier: ViewModifier {
-    @Binding var isPresented: Bool
-    let text: String
-
-    /// 在支持的系统版本上启用系统翻译面板，低版本则保持页面可正常编译运行。
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 17.4, *) {
-            content.translationPresentation(isPresented: $isPresented, text: text)
-        } else {
-            content
-        }
-    }
+enum ArticleSheetMetrics {
+    static let maxWidth: CGFloat = 720
 }
 
-private struct ArticleMetadataHeader: View {
+/// 纸片顶部：体裁/主题标签、马克笔标题，目标词默认收起，只占一行。
+private struct ArticleSheetHeader: View {
     let article: Article
+    let seed: UInt64
+
+    @State private var showsWords = false
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
-        HStack(spacing: 12) {
-            Label(article.scene.rawValue, systemImage: article.scene.systemImageName)
-            Label(article.topic.rawValue, systemImage: article.topic.systemImageName)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Label(article.scene.rawValue, systemImage: article.scene.systemImageName)
+                Label(article.topic.rawValue, systemImage: article.topic.systemImageName)
+            }
+            .font(.caption)
+            .foregroundStyle(Color.readingTextSecondary)
+
+            if !article.title.isEmpty {
+                Text(article.title)
+                    .font(.system(.title2, design: .serif).italic().weight(.semibold))
+                    .foregroundStyle(Color.readingTitle)
+                    .markerHighlight(seed: seed)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !article.targetWords.isEmpty {
+                wordsDisclosure
+            }
         }
-        .font(.caption)
-        .foregroundStyle(Color.readingTextSecondary)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var wordsDisclosure: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    showsWords.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(article.targetWords.count) 个词汇")
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .rotationEffect(.degrees(showsWords ? 180 : 0))
+                }
+                .font(.caption)
+                .foregroundStyle(Color.readingTextTertiary)
+                .frame(minHeight: 32)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(showsWords ? "收起目标词" : "展开目标词")
+
+            if showsWords {
+                Text(article.targetWords.map(\.spelling).joined(separator: " · "))
+                    .font(.system(.footnote, design: .serif).italic())
+                    .foregroundStyle(Color.readingTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
+        }
     }
 }
 
@@ -220,8 +271,10 @@ private struct ArticleParagraphSection: View {
     let paragraph: ArticleParagraph
     let targetWords: [VocabWord]
     let formatter: ArticleContentFormatter
+    let sketchSeed: UInt64
+    let emphasizesSpeakers: Bool
     let isHighlighted: Bool
-    let onWordTap: (String) -> Void
+    let onWordTap: (WordLookupRequest) -> Void
     let onTapParagraph: () -> Void
     let onBookmarkSelection: (String) -> Void
 
@@ -235,14 +288,18 @@ private struct ArticleParagraphSection: View {
         targetWords: [VocabWord],
         formatter: ArticleContentFormatter,
         translator: ArticleParagraphTranslatorProtocol,
+        sketchSeed: UInt64 = 0,
+        emphasizesSpeakers: Bool = false,
         isHighlighted: Bool = false,
-        onWordTap: @escaping (String) -> Void,
+        onWordTap: @escaping (WordLookupRequest) -> Void,
         onTapParagraph: @escaping () -> Void = {},
         onBookmarkSelection: @escaping (String) -> Void = { _ in }
     ) {
         self.paragraph = paragraph
         self.targetWords = targetWords
         self.formatter = formatter
+        self.sketchSeed = sketchSeed
+        self.emphasizesSpeakers = emphasizesSpeakers
         self.isHighlighted = isHighlighted
         self.onWordTap = onWordTap
         self.onTapParagraph = onTapParagraph
@@ -265,12 +322,16 @@ private struct ArticleParagraphSection: View {
                         vocabularyOccurrences: paragraph.vocabularyOccurrences
                     )
                 ),
+                emphasizesSpeakers: emphasizesSpeakers,
                 onOpenURL: { url in
                     if url.scheme == "word", let spelling = url.host(percentEncoded: false) {
-                        onWordTap(spelling)
+                        onWordTap(lookupRequest(for: spelling))
                     }
                 },
                 onBookmarkSelection: onBookmarkSelection,
+                onTranslateSelection: { selection in
+                    onWordTap(lookupRequest(for: selection))
+                },
                 translationActionPresentation: supplementPresentation(for: .translation),
                 analysisActionPresentation: supplementPresentation(for: .analysis),
                 onTranslateAction: {
@@ -287,17 +348,18 @@ private struct ArticleParagraphSection: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if let renderedSupplement = drawerState.renderedSupplement {
-                ParagraphSupplementDrawer(isOpen: drawerState.isOpen, animation: supplementAnimation) {
+                SupplementDrawer(isOpen: drawerState.isOpen, animation: supplementAnimation) {
                     supplementContent(for: renderedSupplement)
                 }
                 .transition(.identity)
             }
         }
         .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHighlighted ? Color.readingTitle.opacity(0.08) : Color.clear)
-        )
+        .background {
+            // 朗读中的段落用一块手绘形状的淡荧光底，和标题、目标词的马克笔语言一致。
+            SketchOutlineShape(seed: sketchSeed, cornerRadius: 12, cornerVariance: 4, jitter: 1)
+                .fill(Color.readingMarker.opacity(isHighlighted ? 0.2 : 0))
+        }
         .animation(
             accessibilityReduceMotion ? nil : .easeInOut(duration: 0.3),
             value: isHighlighted
@@ -314,6 +376,26 @@ private struct ArticleParagraphSection: View {
     }
 
     /// 将文章段落状态映射到与收藏页一致的阅读辅助按钮展示模型。
+    /// 查词时带上所在原句和是否为今日目标词，供查词面板展示文中释义与原句翻译。
+    private func lookupRequest(for text: String) -> WordLookupRequest {
+        WordLookupRequest(
+            text: text,
+            sentence: Self.removingSpeakerLabel(
+                from: SentenceExtractor.sentence(containing: text, in: paragraph.content)
+            ),
+            isTargetWord: targetWords.contains { $0.spelling.caseInsensitiveCompare(text) == .orderedSame }
+        )
+    }
+
+    /// 对话体的原句去掉开头的 "Name:"，查词面板里只留句子本身。
+    private static func removingSpeakerLabel(from sentence: String) -> String {
+        sentence.replacingOccurrences(
+            of: #"^[A-Z][A-Za-z'.\-]{0,19}(?: [A-Z][A-Za-z'.\-]{0,19})?\s*:\s*"#,
+            with: "",
+            options: .regularExpression
+        )
+    }
+
     private func supplementPresentation(for action: ReadingSupplementAction) -> ReadingSupplementActionPresentation {
         let panel: ArticleParagraphExpansionPanel = action == .translation ? .translation : .analysis
         let isLoading = viewModel.loadingPanel == panel
@@ -419,8 +501,16 @@ private struct ArticleParagraphSection: View {
             .textSelection(.enabled)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.readingControlFill)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background {
+                // 翻译 / 解析像夹在段落下的一张手绘便签。
+                ReadingCardBackground(
+                    seed: sketchSeed &+ 7,
+                    fill: .readingControlFill,
+                    cornerRadius: 10,
+                    cornerVariance: 3,
+                    lineOpacity: 0.7
+                )
+            }
     }
 
     private func errorView(_ error: String) -> some View {
@@ -430,55 +520,12 @@ private struct ArticleParagraphSection: View {
     }
 }
 
-private struct ParagraphSupplementDrawer<Content: View>: View {
-    let isOpen: Bool
-    let animation: Animation?
-    @ViewBuilder let content: () -> Content
-
-    @State private var measuredHeight: CGFloat = 0
-
-    var body: some View {
-        content()
-            // 将段落间距也纳入抽屉高度，避免关闭后移除容器时文章再次跳动。
-            .padding(.top, 8)
-            .fixedSize(horizontal: false, vertical: true)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: ParagraphSupplementHeightPreferenceKey.self,
-                        value: proxy.size.height
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: isOpen ? measuredHeight : 0, alignment: .top)
-            .clipped()
-            .opacity(isOpen ? 1 : 0)
-            .allowsHitTesting(isOpen)
-            .accessibilityHidden(!isOpen)
-            .animation(animation, value: isOpen)
-            .onPreferenceChange(ParagraphSupplementHeightPreferenceKey.self) { height in
-                // 首次展开及异步结果返回时 isOpen 不变，需要单独动画化实测高度。
-                withAnimation(animation) {
-                    measuredHeight = height
-                }
-            }
-    }
-}
-
-private struct ParagraphSupplementHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    /// 多层内容同时上报高度时取最大值，确保抽屉边界包住完整内容。
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 private struct SelectableAttributedTextView: UIViewRepresentable {
     let attributedText: NSAttributedString
+    var emphasizesSpeakers = false
     let onOpenURL: (URL) -> Void
     let onBookmarkSelection: (String) -> Void
+    var onTranslateSelection: (String) -> Void = { _ in }
     let translationActionPresentation: ReadingSupplementActionPresentation
     let analysisActionPresentation: ReadingSupplementActionPresentation
     let onTranslateAction: () -> Void
@@ -487,7 +534,8 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onOpenURL: onOpenURL,
-            onBookmarkSelection: onBookmarkSelection
+            onBookmarkSelection: onBookmarkSelection,
+            onTranslateSelection: onTranslateSelection
         )
     }
 
@@ -510,6 +558,7 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         uiView.onAnalyzeAction = onAnalyzeAction
         context.coordinator.onOpenURL = onOpenURL
         context.coordinator.onBookmarkSelection = onBookmarkSelection
+        context.coordinator.onTranslateSelection = onTranslateSelection
         uiView.invalidateIntrinsicContentSize()
         uiView.setNeedsLayout()
     }
@@ -544,6 +593,10 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             mutable.addAttribute(.foregroundColor, value: ReadingPalette.primaryText, range: range)
         }
 
+        if emphasizesSpeakers {
+            emphasizeSpeakerLabels(in: mutable, bodyFont: bodyFont)
+        }
+
         let inlineActionFont = UIFontMetrics(forTextStyle: .footnote)
             .scaledFont(for: UIFont.systemFont(ofSize: 13))
         mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
@@ -556,6 +609,22 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         }
 
         return mutable
+    }
+
+    /// 对话 / 访谈每行开头的 "Name:" 加粗并降一级颜色，方便扫读轮次。
+    private func emphasizeSpeakerLabels(in text: NSMutableAttributedString, bodyFont: UIFont) {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"^[A-Z][A-Za-z'.\-]{0,19}(?: [A-Z][A-Za-z'.\-]{0,19})?\s*:"#,
+            options: [.anchorsMatchLines]
+        ) else { return }
+
+        let boldDescriptor = bodyFont.fontDescriptor.withSymbolicTraits(.traitBold) ?? bodyFont.fontDescriptor
+        let speakerFont = UIFont(descriptor: boldDescriptor, size: bodyFont.pointSize)
+        let fullRange = NSRange(location: 0, length: text.length)
+        for match in regex.matches(in: text.string, range: fullRange) {
+            text.addAttribute(.font, value: speakerFont, range: match.range)
+            text.addAttribute(.foregroundColor, value: ReadingPalette.secondaryText, range: match.range)
+        }
     }
 
     private var bodyFont: UIFont {
@@ -580,16 +649,21 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
         private let analysisButton = UIButton(type: .system)
         private let actionStack = UIStackView()
 
+        /// 目标词下方的马克笔涂抹，画在正文之下，和标题荧光同一套笔触。
+        private let markerLayer = CAShapeLayer()
+
         override init(frame: CGRect) {
             super.init(frame: frame)
             configureTextView()
             configureActionButtons()
+            observeAppearanceChanges()
         }
 
         required init?(coder: NSCoder) {
             super.init(coder: coder)
             configureTextView()
             configureActionButtons()
+            observeAppearanceChanges()
         }
 
         /// 同步两枚行尾按钮的共享展示状态，保证与收藏页使用相同文案、图标和选中规则。
@@ -615,6 +689,8 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
 
         /// 初始化正文 UITextView，保留选词、系统菜单和单词链接能力。
         private func configureTextView() {
+            markerLayer.contentsScale = UIScreen.main.scale
+            layer.insertSublayer(markerLayer, at: 0)
             textView.isEditable = false
             textView.isSelectable = true
             textView.isScrollEnabled = false
@@ -760,6 +836,67 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
             let layout = measuredLayout(for: width)
             textView.frame = CGRect(x: 0, y: 0, width: width, height: layout.textHeight)
             actionStack.frame = layout.actionFrame
+            updateVocabularyMarkers()
+        }
+
+        private func observeAppearanceChanges() {
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (container: Self, _) in
+                container.setNeedsLayout()
+            }
+        }
+
+        /// 按目标词链接逐行取字形区域，在字的下半部画一笔马克笔；换行的词组每行各画一笔。
+        private func updateVocabularyMarkers() {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
+
+            markerLayer.frame = textView.frame
+            guard let text = textView.attributedText, text.length > 0 else {
+                markerLayer.path = nil
+                return
+            }
+
+            let layoutManager = textView.layoutManager
+            let textContainer = textView.textContainer
+            let path = CGMutablePath()
+            let noSelection = NSRange(location: NSNotFound, length: 0)
+
+            text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+                let url = (value as? URL) ?? (value as? String).flatMap(URL.init(string:))
+                guard url?.scheme == "word" else { return }
+
+                let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont
+                    ?? UIFont.preferredFont(forTextStyle: .body)
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                var lineIndex: UInt64 = 0
+
+                layoutManager.enumerateEnclosingRects(
+                    forGlyphRange: glyphRange,
+                    withinSelectedGlyphRange: noSelection,
+                    in: textContainer
+                ) { rect, _ in
+                    guard rect.width > 1 else { return }
+                    let baseline = rect.minY + font.ascender
+                    let band = CGRect(
+                        x: rect.minX - 1.5,
+                        y: baseline - font.xHeight * 0.5,
+                        width: rect.width + 3,
+                        height: font.xHeight * 0.5 + abs(font.descender) * 0.7
+                    )
+                    let seed = UInt64(range.location) &* 0x9E37_79B9 &+ lineIndex
+                    path.addPath(MarkerSwipeShape(seed: seed).path(in: band).cgPath)
+                    lineIndex += 1
+                }
+            }
+
+            let isDark = traitCollection.userInterfaceStyle == .dark
+            markerLayer.path = path
+            markerLayer.fillColor = ReadingPalette.marker
+                .resolvedColor(with: traitCollection)
+                .withAlphaComponent(isDark ? 0.36 : 0.55)
+                .cgColor
+            markerLayer.compositingFilter = isDark ? nil : "multiplyBlendMode"
         }
 
         private func measuredTextHeight(for width: CGFloat) -> CGFloat {
@@ -793,13 +930,16 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var onOpenURL: (URL) -> Void
         var onBookmarkSelection: (String) -> Void
+        var onTranslateSelection: (String) -> Void
 
         init(
             onOpenURL: @escaping (URL) -> Void,
-            onBookmarkSelection: @escaping (String) -> Void
+            onBookmarkSelection: @escaping (String) -> Void,
+            onTranslateSelection: @escaping (String) -> Void
         ) {
             self.onOpenURL = onOpenURL
             self.onBookmarkSelection = onBookmarkSelection
+            self.onTranslateSelection = onTranslateSelection
         }
 
         func textView(
@@ -830,7 +970,29 @@ private struct SelectableAttributedTextView: UIViewRepresentable {
                 onBookmarkSelection(selectedText + "\n" + sentence)
             }
 
-            return UIMenu(children: prioritizedMenuElements(from: suggestedActions, bookmarkAction: bookmarkAction))
+            // 系统“翻译”由 UIKit 自己弹出，和点击高亮词的查词面板不一致；
+            // 换成同名动作，两条入口统一走 WordLookupSheet。
+            let translateAction = UIAction(title: "翻译", image: UIImage(systemName: "translate")) { [onTranslateSelection] _ in
+                onTranslateSelection(selectedText)
+            }
+            let elements = Self.replacingSystemTranslate(in: suggestedActions, with: translateAction)
+            return UIMenu(children: prioritizedMenuElements(from: elements, bookmarkAction: bookmarkAction))
+        }
+
+        /// 递归替换系统翻译命令（`_translate:`），其余系统菜单项保持原样。
+        static func replacingSystemTranslate(in elements: [UIMenuElement], with action: UIAction) -> [UIMenuElement] {
+            let systemTranslate = NSSelectorFromString("_translate:")
+            return elements.map { element in
+                if let command = element as? UICommand, command.action == systemTranslate {
+                    let replacement = action.copy() as? UIAction ?? action
+                    replacement.title = command.title
+                    return replacement
+                }
+                if let menu = element as? UIMenu {
+                    return menu.replacingChildren(replacingSystemTranslate(in: menu.children, with: action))
+                }
+                return element
+            }
         }
 
         /// 优先把“收藏”插到系统 Lookup 前面；如果当前系统菜单里没有 Lookup，就把“收藏”前置到最前面。

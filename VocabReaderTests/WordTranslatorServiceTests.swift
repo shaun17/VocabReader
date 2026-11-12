@@ -361,3 +361,62 @@ final class WordTranslatorServiceTests: XCTestCase {
         XCTAssertEqual(object["max_tokens"] as? Int, 900)
     }
 }
+
+final class WordLookupTests: XCTestCase {
+    private let config = LLMConfig(apiKey: "key", baseURL: "https://api.example.com/v1", model: "moonshot-v1-8k")
+
+    func testLookUpDecodesStructuredEntryAndSendsWordAndSentence() async throws {
+        var capturedRequest: URLRequest?
+        let content = #"{"phonetic":"/ˈhɒrə/","partOfSpeech":"n.","contextMeaning":"糟糕透顶的事","contextNote":"夸张说法","senses":[{"partOfSpeech":"n.","meaning":"恐惧"}],"sentenceTranslation":"这些数字简直糟透了。","collocations":[{"phrase":"to my horror","meaning":"令我惊恐的是"}]}"#
+        let session = CapturingMockSession(data: try Self.completion(content), statusCode: 200) { capturedRequest = $0 }
+        let service = WordTranslatorService(config: config, session: session)
+
+        let result = try await service.lookUp(word: "horror", sentence: "The numbers are a real horror.")
+
+        XCTAssertEqual(result.phonetic, "/ˈhɒrə/")
+        XCTAssertEqual(result.contextMeaning, "糟糕透顶的事")
+        XCTAssertEqual(result.senses, [.init(partOfSpeech: "n.", meaning: "恐惧")])
+        XCTAssertEqual(result.collocations.first?.phrase, "to my horror")
+        let body = String(data: try XCTUnwrap(capturedRequest?.httpBody), encoding: .utf8) ?? ""
+        XCTAssertTrue(body.contains("horror"))
+        XCTAssertTrue(body.contains("The numbers are a real horror."))
+    }
+
+    func testDecodeToleratesCodeFenceHeadingAndMissingFields() {
+        let raw = """
+        Here is the entry:
+        ```json
+        {"contextMeaning": "汽油"}
+        ```
+        """
+
+        let result = WordLookupResult.decode(from: raw)
+
+        XCTAssertEqual(result?.contextMeaning, "汽油")
+        XCTAssertEqual(result?.senses, [])
+        XCTAssertEqual(result?.phonetic, "")
+    }
+
+    func testDecodeRejectsEntryWithoutAnyMeaning() {
+        XCTAssertNil(WordLookupResult.decode(from: #"{"phonetic": "/x/"}"#))
+        XCTAssertNil(WordLookupResult.decode(from: "汽油"))
+    }
+
+    func testLookUpThrowsReadableErrorForUnstructuredReply() async throws {
+        let session = CapturingMockSession(data: try Self.completion("汽油"), statusCode: 200) { _ in }
+        let service = WordTranslatorService(config: config, session: session)
+
+        do {
+            _ = try await service.lookUp(word: "petrol", sentence: "Petrol is expensive.")
+            XCTFail("expected error")
+        } catch {
+            XCTAssertEqual(error as? WordLookupError, .unreadableResponse)
+        }
+    }
+
+    private static func completion(_ content: String) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "choices": [["message": ["role": "assistant", "content": content]]]
+        ])
+    }
+}

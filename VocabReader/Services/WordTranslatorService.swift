@@ -387,3 +387,159 @@ private struct ParagraphAnalysisPoint: Decodable {
             !usage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
+
+// MARK: - Word lookup
+
+/// 阅读页查词面板的完整词条：文中释义、常见词义、原句译文与搭配，一次 LLM 请求拿全。
+struct WordLookupResult: Equatable, Decodable {
+    struct Sense: Equatable, Decodable {
+        var partOfSpeech: String
+        var meaning: String
+
+        init(partOfSpeech: String, meaning: String) {
+            self.partOfSpeech = partOfSpeech
+            self.meaning = meaning
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            partOfSpeech = (try container.decodeIfPresent(String.self, forKey: .partOfSpeech) ?? "").trimmed
+            meaning = (try container.decodeIfPresent(String.self, forKey: .meaning) ?? "").trimmed
+        }
+
+        private enum CodingKeys: String, CodingKey { case partOfSpeech, meaning }
+    }
+
+    struct Collocation: Equatable, Decodable {
+        var phrase: String
+        var meaning: String
+
+        init(phrase: String, meaning: String) {
+            self.phrase = phrase
+            self.meaning = meaning
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            phrase = (try container.decodeIfPresent(String.self, forKey: .phrase) ?? "").trimmed
+            meaning = (try container.decodeIfPresent(String.self, forKey: .meaning) ?? "").trimmed
+        }
+
+        private enum CodingKeys: String, CodingKey { case phrase, meaning }
+    }
+
+    var phonetic: String
+    var partOfSpeech: String
+    var contextMeaning: String
+    var contextNote: String
+    var senses: [Sense]
+    var sentenceTranslation: String
+    var collocations: [Collocation]
+
+    init(
+        phonetic: String = "",
+        partOfSpeech: String = "",
+        contextMeaning: String,
+        contextNote: String = "",
+        senses: [Sense] = [],
+        sentenceTranslation: String = "",
+        collocations: [Collocation] = []
+    ) {
+        self.phonetic = phonetic
+        self.partOfSpeech = partOfSpeech
+        self.contextMeaning = contextMeaning
+        self.contextNote = contextNote
+        self.senses = senses
+        self.sentenceTranslation = sentenceTranslation
+        self.collocations = collocations
+    }
+
+    /// 字段全部可缺省：模型漏写某一栏时只隐藏那一栏，不让整张词条失败。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        phonetic = (try container.decodeIfPresent(String.self, forKey: .phonetic) ?? "").trimmed
+        partOfSpeech = (try container.decodeIfPresent(String.self, forKey: .partOfSpeech) ?? "").trimmed
+        contextMeaning = (try container.decodeIfPresent(String.self, forKey: .contextMeaning) ?? "").trimmed
+        contextNote = (try container.decodeIfPresent(String.self, forKey: .contextNote) ?? "").trimmed
+        senses = (try container.decodeIfPresent([Sense].self, forKey: .senses) ?? [])
+            .filter { !$0.meaning.isEmpty }
+        sentenceTranslation = (try container.decodeIfPresent(String.self, forKey: .sentenceTranslation) ?? "").trimmed
+        collocations = (try container.decodeIfPresent([Collocation].self, forKey: .collocations) ?? [])
+            .filter { !$0.phrase.isEmpty }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case phonetic, partOfSpeech, contextMeaning, contextNote, senses, sentenceTranslation, collocations
+    }
+
+    /// 兼容裸 JSON、代码块包裹和 JSON 前后夹带说明文字；至少要有一个释义才算有效。
+    static func decode(from raw: String) -> WordLookupResult? {
+        let cleaned = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^```(?:json)?\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\s*```$"#, with: "", options: .regularExpression)
+
+        var candidates = [cleaned]
+        if let first = cleaned.firstIndex(of: "{"), let last = cleaned.lastIndex(of: "}"), first < last {
+            candidates.append(String(cleaned[first...last]))
+        }
+
+        for candidate in candidates {
+            guard let data = candidate.data(using: .utf8),
+                  let result = try? JSONDecoder().decode(WordLookupResult.self, from: data),
+                  !result.contextMeaning.isEmpty || !result.senses.isEmpty else {
+                continue
+            }
+            return result
+        }
+        return nil
+    }
+}
+
+enum WordLookupError: LocalizedError {
+    case unreadableResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .unreadableResponse: return "词条没有按格式返回，请重试"
+        }
+    }
+}
+
+protocol WordLookupServiceProtocol {
+    func lookUp(word: String, sentence: String) async throws -> WordLookupResult
+}
+
+extension WordTranslatorService: WordLookupServiceProtocol {
+    private static let lookupMaxTokens = 700
+
+    func lookUp(word: String, sentence: String) async throws -> WordLookupResult {
+        let prompt = """
+        You are a concise English-Chinese learner's dictionary.
+        Explain the English word or phrase "\(word)" as it is used in this sentence:
+        \(sentence)
+
+        Return valid JSON only, with no Markdown or code fences, matching this schema exactly:
+        {
+          "phonetic": "IPA in slashes, e.g. /ˈhɒrə/; empty string for multi-word phrases",
+          "partOfSpeech": "part of speech in this sentence, abbreviated like n. / v. / adj. / adv. / phr.",
+          "contextMeaning": "the Chinese meaning in this sentence, at most 12 characters",
+          "contextNote": "one short Simplified Chinese sentence on nuance or tone here; empty string if nothing notable",
+          "senses": [{"partOfSpeech": "n.", "meaning": "common Chinese meaning"}],
+          "sentenceTranslation": "natural Simplified Chinese translation of the whole sentence",
+          "collocations": [{"phrase": "common English collocation", "meaning": "Chinese meaning"}]
+        }
+        Give 2-3 senses ordered by frequency (the first may repeat the context meaning) and 2-3 everyday collocations.
+        """
+
+        let raw = try await performLLMTextRequest(prompt: prompt, maxTokens: Self.lookupMaxTokens)
+        guard let result = WordLookupResult.decode(from: raw) else {
+            throw WordLookupError.unreadableResponse
+        }
+        return result
+    }
+}
+
+private extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}

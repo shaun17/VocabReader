@@ -103,12 +103,12 @@ struct SettingsFieldLabel: View {
     }
 }
 
-/// 设置选项把紧凑视觉壳与完整触控区域分离，避免三列网格再次出现大块胶囊。
+/// 设置选项把紧凑视觉壳与完整触控区域分离；单元格有最小宽度，保证两字选项和 "AI" 等宽。
 enum SettingsChoiceButtonMetrics {
     static let visualHeight: CGFloat = 34
     static let minimumTouchHeight: CGFloat = 44
     static let horizontalPadding: CGFloat = 9
-    static let contentSpacing: CGFloat = 4
+    static let minimumCellWidth: CGFloat = 58
     static let cornerRadius: CGFloat = 10
     static let borderWidth: CGFloat = 0.75
 }
@@ -120,22 +120,14 @@ struct SettingsChoiceButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: SettingsChoiceButtonMetrics.contentSpacing) {
-                Text(title)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-
-                Image(systemName: "checkmark")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Color.readingTitle)
-                    .frame(width: 10)
-                    .opacity(isSelected ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
+            // 选中态只靠底色、描边和文字颜色区分，不额外占宽，网格里每格宽度保持一致。
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(Color.readingTextPrimary)
+                .foregroundStyle(isSelected ? Color.readingTitle : Color.readingTextPrimary)
                 .padding(.horizontal, SettingsChoiceButtonMetrics.horizontalPadding)
-                .frame(minHeight: SettingsChoiceButtonMetrics.visualHeight)
+                .frame(maxWidth: .infinity, minHeight: SettingsChoiceButtonMetrics.visualHeight)
                 .background {
                     RoundedRectangle(
                         cornerRadius: SettingsChoiceButtonMetrics.cornerRadius,

@@ -47,6 +47,16 @@ enum ReadingPalette {
         light: color(250, 245, 230),
         dark: color(38, 34, 30)
     )
+    /// 马克笔荧光黄：浅色模式与纸面正片叠底，深色模式用暗琥珀避免刺眼。
+    static let marker = adaptiveColor(
+        light: color(255, 200, 70),
+        dark: color(196, 142, 52)
+    )
+    /// 手绘卡片描边：比结构分隔线更深一档，像铅笔线。
+    static let sketchLine = adaptiveColor(
+        light: color(150, 136, 114),
+        dark: color(112, 102, 89)
+    )
     static let success = adaptiveColor(
         light: color(47, 107, 63),
         dark: color(130, 201, 143)
@@ -107,6 +117,12 @@ extension Color {
 
     /// 导航栏使用比正文背景略有层次的动态底色。
     static let readingNavigationBackground = Color(uiColor: ReadingPalette.navigationBackground)
+
+    /// 标题马克笔荧光底色。
+    static let readingMarker = Color(uiColor: ReadingPalette.marker)
+
+    /// 手绘卡片的铅笔描边色。
+    static let readingSketchLine = Color(uiColor: ReadingPalette.sketchLine)
 
     /// 成功反馈使用的动态绿色。
     static let readingSuccess = Color(uiColor: ReadingPalette.success)
@@ -252,66 +268,6 @@ private struct ReadingSupplementActionButtonStyle: ButtonStyle {
     }
 }
 
-/// 不规则椭圆形卡片，和首页文章卡片保持同一套手绘纸片视觉。
-struct ReadingCardShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
-        let tl: CGFloat = min(w, h) * 0.12
-        let tr: CGFloat = min(w, h) * 0.18
-        let br: CGFloat = min(w, h) * 0.10
-        let bl: CGFloat = min(w, h) * 0.16
-
-        var path = Path()
-        path.move(to: CGPoint(x: tl, y: 0))
-        path.addQuadCurve(
-            to: CGPoint(x: w - tr, y: 0),
-            control: CGPoint(x: w * 0.5, y: -h * 0.012)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: w, y: tr),
-            control: CGPoint(x: w, y: 0)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: w, y: h - br),
-            control: CGPoint(x: w + w * 0.008, y: h * 0.5)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: w - br, y: h),
-            control: CGPoint(x: w, y: h)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: bl, y: h),
-            control: CGPoint(x: w * 0.5, y: h + h * 0.010)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: 0, y: h - bl),
-            control: CGPoint(x: 0, y: h)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: 0, y: tl),
-            control: CGPoint(x: -w * 0.006, y: h * 0.5)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: tl, y: 0),
-            control: CGPoint(x: 0, y: 0)
-        )
-        return path
-    }
-}
-
-/// 统一的阅读卡片底板，给首页文章卡片和收藏卡片复用。
-struct ReadingCardBackground: View {
-    var body: some View {
-        ReadingCardShape()
-            .fill(Color.readingCardFill)
-            .overlay {
-                ReadingCardShape()
-                    .stroke(Color.readingSeparator.opacity(0.72), lineWidth: 0.8)
-            }
-    }
-}
-
 /// 模拟作业本/草稿纸的条纹背景。暖黄底色上绘制等距水平线。
 struct LinedPaperBackground: View {
     var lineSpacing: CGFloat = 32
@@ -333,5 +289,54 @@ struct LinedPaperBackground: View {
                 }
             }
             .ignoresSafeArea()
+    }
+}
+
+/// 可开合的抽屉：内容始终按实测高度布局，外框高度在 0 和实测高度之间动画并裁切。
+/// 文章段落的翻译/解析和收藏卡片的展开区共用，开合时不会出现内容先回流、旧内容再淡出的残影。
+struct SupplementDrawer<Content: View>: View {
+    let isOpen: Bool
+    let animation: Animation?
+    /// 抽屉顶部留白，计入抽屉高度，关闭后不残留间距。
+    var topSpacing: CGFloat = 8
+    @ViewBuilder let content: () -> Content
+
+    @State private var measuredHeight: CGFloat = 0
+
+    var body: some View {
+        content()
+            // 将段落间距也纳入抽屉高度，避免关闭后移除容器时文章再次跳动。
+            .padding(.top, topSpacing)
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: SupplementDrawerHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: isOpen ? measuredHeight : 0, alignment: .top)
+            .clipped()
+            .opacity(isOpen ? 1 : 0)
+            .allowsHitTesting(isOpen)
+            .accessibilityHidden(!isOpen)
+            .animation(animation, value: isOpen)
+            .onPreferenceChange(SupplementDrawerHeightKey.self) { height in
+                // 首次展开及异步结果返回时 isOpen 不变，需要单独动画化实测高度。
+                withAnimation(animation) {
+                    measuredHeight = height
+                }
+            }
+    }
+}
+
+private struct SupplementDrawerHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    /// 多层内容同时上报高度时取最大值，确保抽屉边界包住完整内容。
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

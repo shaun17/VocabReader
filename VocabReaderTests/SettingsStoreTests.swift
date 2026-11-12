@@ -14,6 +14,36 @@ final class SettingsStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testSceneSelectionSummaryFitsOneRow() {
+        XCTAssertEqual(ArticleScene.selectionSummary(ArticleScene.allCases), "全部 8 种")
+        XCTAssertEqual(ArticleScene.selectionSummary([.dialogue, .email]), "对话、邮件")
+        XCTAssertEqual(ArticleScene.selectionSummary([.dialogue, .email, .news]), "已选 3 种")
+    }
+
+    func testEveryTopicBelongsToExactlyOneGroup() {
+        let grouped = ArticleTopicGroup.allCases.flatMap(\.topics)
+        XCTAssertEqual(grouped.count, ArticleTopic.allCases.count)
+        XCTAssertEqual(Set(grouped), Set(ArticleTopic.allCases))
+    }
+
+    func testLoadEnablesScenesAddedAfterLegacySave() {
+        storage.defaults.set([ArticleScene.dialogue.rawValue], forKey: storage.enabledScenesKey)
+
+        let store = SettingsStore(storage: storage)
+
+        XCTAssertEqual(store.enabledScenes, [.dialogue, .news, .email, .essay, .opinion, .interview])
+    }
+
+    func testLoadKeepsNewScenesDisabledAfterUserTurnsThemOff() {
+        let store = SettingsStore(storage: storage)
+        store.enabledScenes = [.novel, .essay]
+        store.save()
+
+        let reloadedStore = SettingsStore(storage: storage)
+
+        XCTAssertEqual(reloadedStore.enabledScenes, [.novel, .essay])
+    }
+
     func testSavePersistsAllUserInputs() {
         let store = SettingsStore(storage: storage)
         store.maiMemoToken = "maimemo-token"
@@ -287,6 +317,7 @@ final class SettingsStoreTests: XCTestCase {
         storage.defaults.removeObject(forKey: storage.wordsPerArticleKey)
         storage.defaults.removeObject(forKey: storage.selectedTopicKey)
         storage.defaults.removeObject(forKey: storage.enabledScenesKey)
+        storage.defaults.removeObject(forKey: storage.knownScenesKey)
         storage.defaults.removeObject(forKey: storage.articleDifficultyKey)
         storage.defaults.removeObject(forKey: storage.appearanceKey)
         storage.defaults.removeObject(forKey: storage.speechEngineKey)

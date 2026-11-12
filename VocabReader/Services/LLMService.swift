@@ -476,7 +476,7 @@ private extension LLMService {
         The full article will cover \(totalWordCount) target vocabulary items; this section must cover ALL of these current-section items: \(targetVocabularyInstruction(for: sectionVocabulary)). \
         \(difficulty.promptInstructions) \
         Write around \(plan.wordRange.lowerBound)-\(plan.wordRange.upperBound) English words for this \(sectionName) section. \
-        \(scene.formatInstructions(for: plan, includesEnding: isClosingSection)) \
+        \(scene.formatInstructions(for: plan, includesEnding: isClosingSection, speakers: sectionIndex == 1 ? .random() : nil)) \
         Continue the same situation, question, explanation, or conflict. Do not restart, summarize, or switch topics between sections. \
         \(positionInstructions.joined(separator: " ")) \
         \(topic.topicInstructions) \
@@ -503,7 +503,7 @@ private extension LLMService {
         The article as a whole must include ALL of the listed vocabulary words. \
         \(difficulty.promptInstructions) \
         Write around \(plan.wordRange.lowerBound)-\(plan.wordRange.upperBound) English words. \
-        \(scene.formatInstructions(for: plan)) \
+        \(scene.formatInstructions(for: plan, speakers: .random())) \
         \(articlePlanningInstruction()) \
         \(topic.topicInstructions) \
         \(topic.factConstraintInstructions)
@@ -810,10 +810,15 @@ private extension LLMService {
     }
 
     /// DeepSeek 偶尔不返回标题，直接从对话正文开头；这时不能把首句当标题丢出正文校验。
+    /// 说话人标签可能是单个字母（旧格式 "A:"）或名字（"Daniel:"、"Mary Ann:"）。
     static func treatsOpeningLineAsBody(_ line: String, scene: ArticleScene) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard scene == .dialogue else { return false }
-        return trimmed.range(of: #"^[A-Z]\s*[:：]"#, options: .regularExpression) != nil
+        guard scene.usesSpeakerLines else { return false }
+        guard trimmed.range(of: #"(?i)^(title|标题)\s*[:：]"#, options: .regularExpression) == nil else { return false }
+        return trimmed.range(
+            of: #"^[A-Z][A-Za-z'.-]{0,19}(?: [A-Z][A-Za-z'.-]{0,19})?\s*[:：]\s*\S"#,
+            options: .regularExpression
+        ) != nil
     }
 
     /// 兼容模型返回 "Title: ..." 这类标题前缀，避免 UI 上直接显示协议字段名。
