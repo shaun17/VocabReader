@@ -129,3 +129,17 @@
 - 上传结果：`xcodebuild -exportArchive` 使用 `method = app-store-connect`、`destination = upload` 与自动签名成功，终态为 `Uploaded package is processing.`、`Upload succeeded.`、`EXPORT SUCCEEDED`。Apple 后续处理完成状态尚未核查，未提交审核或修改商店元数据。
 - 证据路径：`/tmp/VocabReader-1.1.0-release/` 下保存 `archive.log`、`upload.log`、两阶段签名核查 JSON 和 `distribution-15.xcdistributionlogs`；首次构建及拒绝日志保存在同目录的 `archive-14.log`、`upload-14.log` 与 `distribution-14.xcdistributionlogs`。
 - 验证边界：本次完成最终 Release 编译归档、包内元数据与签名校验及真实上传；未重跑单元测试或模拟器交互验证，未执行 Git 提交、推送或分支操作。
+
+## 2026-11-12 VocabReader 1.2.0 上传 App Store Connect
+
+- [x] 合并 PR #7（文章体裁/话题扩展、查词卡片、进度条动画、收藏页展开修复）
+- [x] 版本号升至 `1.2.0 (16)`，同步 `project.yml` 与工程文件
+- [x] 完成 Release 归档、包内元数据与签名校验
+- [x] 完成 App Store Connect 上传
+
+### Review
+
+- 最终版本：`1.2.0 (16)`，Bundle ID 为 `com.vocabreader.app`，团队为 `N4TQ2P9B46`，基于合并后的 `main`（`04a4a3f`）。
+- 包内核查：版本 `1.2.0 (16)`，架构 `arm64`，`ITSAppUsesNonExemptEncryption = false`，未内置 Debug Phonon 模型；`codesign --verify --deep --strict` 通过。
+- 上传结果：`xcodebuild -exportArchive`（`method = app-store-connect`、`destination = upload`、自动签名）终态为 `Uploaded package is processing.`、`Upload succeeded.`、`EXPORT SUCCEEDED`。Apple 后续处理状态尚未核查，未提交审核或修改商店元数据。
+- 验证边界：上传前在模拟器完成 172 项单元测试；查词面板的设备端翻译路径与发音未在真机验证。
