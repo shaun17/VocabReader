@@ -57,41 +57,53 @@ struct SketchOutlineShape: Shape {
     var jitter: CGFloat = 1.3
 
     func path(in rect: CGRect) -> Path {
-        let samples = Self.perimeterSamples(in: rect, radii: cornerRadii(for: rect))
+        let radii = cornerRadii(for: rect)
+        let samples = Self.perimeterSamples(in: rect, radii: radii)
         guard samples.count > 2 else { return Path(roundedRect: rect, cornerRadius: cornerRadius) }
 
         var random = SketchRandom(seed: seed &+ UInt64(pass) &* 0x51_7CC1_B727_220A)
         let count = samples.count
-        let perimeter = CGFloat(count) * Self.sampleStep
         let isStroke = pass > 0
 
-        // 三层正弦叠加成低频起伏；填充形状的波长取周长整除，首尾无缝闭合。
+        // 起伏是“位置”的函数（三层不同方向的平面波叠加），而不是沿周长的距离：
+        // 卡片变高（比如展开翻译）时，上半部分的笔触保持不动，只有新增部分跟着延伸；闭合处也天然无缝。
         let wavelengths: [CGFloat] = [190, 75, 34]
         let amplitudes: [CGFloat] = [0.75, 0.4, 0.2].map { $0 * jitter }
-        let waves = zip(wavelengths, amplitudes).map { wavelength, amplitude in
-            let cycles = max(1, (perimeter / wavelength).rounded())
+        let baseAngle = random.value(in: 0...(2 * .pi))
+        let waves = zip(wavelengths, amplitudes).enumerated().map { index, pair in
+            let angle = baseAngle + CGFloat(index) * .pi / 3
+            let frequency = 2 * .pi / pair.0
             return (
-                frequency: 2 * .pi * cycles / perimeter,
-                amplitude: amplitude,
+                u: frequency * cos(angle),
+                v: frequency * sin(angle),
+                amplitude: pair.1,
                 phase: random.value(in: 0...(2 * .pi))
             )
         }
 
-        let start = isStroke ? Int(random.value(in: 0...CGFloat(count - 1))) : 0
+        // 笔触起点只落在上边（采样从左上角之后的上边开始），且按绝对距离而不是周长比例取：
+        // 卡片展开/收起时上边不变，起笔位置就不动；若按比例取，周长一变起笔点每帧乱跳，轮廓会抖。
+        let topEdgeCount = max(1, Int(((rect.width - radii[0] - radii[1]) / Self.sampleStep).rounded()))
+        let start = isStroke ? Int(random.value(in: 0...1) * CGFloat(min(topEdgeCount, count) - 1)) : 0
         let overshoot = isStroke ? Int(random.value(in: 10...22) / Self.sampleStep) : 0
         let drift = isStroke ? random.value(in: -1.4...1.4) : 0
         let strokeOffset = isStroke ? random.value(in: -0.6...0.6) : 0
         let total = count + overshoot
+        // 收笔偏移只在最后一小段渐入，和周长无关，避免高度变化时整圈轮廓跟着蠕动。
+        let driftRamp = min(total, Int(80 / Self.sampleStep))
 
         var path = Path()
         for step in 0...total {
             let index = (start + step) % count
             let sample = samples[index]
-            let distance = CGFloat(start + step) * Self.sampleStep
+            let x = sample.point.x - rect.minX
+            let y = sample.point.y - rect.minY
             var offset = waves.reduce(strokeOffset) { partial, wave in
-                partial + wave.amplitude * sin(wave.frequency * distance + wave.phase)
+                partial + wave.amplitude * sin(wave.u * x + wave.v * y + wave.phase)
             }
-            offset += drift * CGFloat(step) / CGFloat(total)
+            if driftRamp > 0 {
+                offset += drift * CGFloat(max(0, step - (total - driftRamp))) / CGFloat(driftRamp)
+            }
 
             let point = CGPoint(
                 x: sample.point.x + sample.normal.dx * offset,
@@ -171,27 +183,83 @@ struct SketchOutlineShape: Shape {
     }
 }
 
-/// 阅读卡片底板：纸片填充 + 两道不完全重合的铅笔描边。首页文章卡片和收藏卡片共用。
+/// 阅读卡片底板：纸片填充 + 两道不完全重合的铅笔描边。
+/// 首页文章卡片、收藏卡片、阅读页封面卡和段落翻译便签共用，只调整底色和圆角。
 struct ReadingCardBackground: View {
     var seed: UInt64 = 0
+    var fill: Color = .readingCardFill
+    var cornerRadius: CGFloat = 18
+    var cornerVariance: CGFloat = 6
+    var lineOpacity: Double = 1
 
     var body: some View {
         ZStack {
-            SketchOutlineShape(seed: seed)
-                .fill(Color.readingCardFill)
+            outline(pass: 0)
+                .fill(fill)
 
-            SketchOutlineShape(seed: seed, pass: 1)
+            outline(pass: 1)
                 .stroke(
-                    Color.readingSketchLine.opacity(0.85),
+                    Color.readingSketchLine.opacity(0.85 * lineOpacity),
                     style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round)
                 )
 
-            SketchOutlineShape(seed: seed, pass: 2)
+            outline(pass: 2)
                 .stroke(
-                    Color.readingSketchLine.opacity(0.4),
+                    Color.readingSketchLine.opacity(0.4 * lineOpacity),
                     style: StrokeStyle(lineWidth: 0.7, lineCap: .round, lineJoin: .round)
                 )
         }
+    }
+
+    private func outline(pass: Int) -> SketchOutlineShape {
+        SketchOutlineShape(
+            seed: seed,
+            pass: pass,
+            cornerRadius: cornerRadius,
+            cornerVariance: cornerVariance
+        )
+    }
+}
+
+/// 手绘分隔线：一道轻微起伏、两端略收的铅笔横线。
+struct SketchDividerShape: Shape {
+    var seed: UInt64
+
+    func path(in rect: CGRect) -> Path {
+        var random = SketchRandom(seed: seed)
+        let phaseA = random.value(in: 0...(2 * .pi))
+        let phaseB = random.value(in: 0...(2 * .pi))
+        let startInset = random.value(in: 0...6)
+        let endInset = random.value(in: 0...10)
+        let width = max(0, rect.width - startInset - endInset)
+        let steps = max(2, Int(width / 4))
+
+        var path = Path()
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let x = rect.minX + startInset + width * t
+            let y = rect.midY + 0.8 * sin(x / 60 + phaseA) + 0.35 * sin(x / 17 + phaseB)
+            if i == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+        return path
+    }
+}
+
+struct SketchDivider: View {
+    var seed: UInt64
+
+    var body: some View {
+        SketchDividerShape(seed: seed)
+            .stroke(
+                Color.readingSketchLine.opacity(0.6),
+                style: StrokeStyle(lineWidth: 1, lineCap: .round)
+            )
+            .frame(height: 4)
+            .accessibilityHidden(true)
     }
 }
 

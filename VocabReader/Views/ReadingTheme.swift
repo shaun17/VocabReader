@@ -291,3 +291,52 @@ struct LinedPaperBackground: View {
             .ignoresSafeArea()
     }
 }
+
+/// 可开合的抽屉：内容始终按实测高度布局，外框高度在 0 和实测高度之间动画并裁切。
+/// 文章段落的翻译/解析和收藏卡片的展开区共用，开合时不会出现内容先回流、旧内容再淡出的残影。
+struct SupplementDrawer<Content: View>: View {
+    let isOpen: Bool
+    let animation: Animation?
+    /// 抽屉顶部留白，计入抽屉高度，关闭后不残留间距。
+    var topSpacing: CGFloat = 8
+    @ViewBuilder let content: () -> Content
+
+    @State private var measuredHeight: CGFloat = 0
+
+    var body: some View {
+        content()
+            // 将段落间距也纳入抽屉高度，避免关闭后移除容器时文章再次跳动。
+            .padding(.top, topSpacing)
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: SupplementDrawerHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: isOpen ? measuredHeight : 0, alignment: .top)
+            .clipped()
+            .opacity(isOpen ? 1 : 0)
+            .allowsHitTesting(isOpen)
+            .accessibilityHidden(!isOpen)
+            .animation(animation, value: isOpen)
+            .onPreferenceChange(SupplementDrawerHeightKey.self) { height in
+                // 首次展开及异步结果返回时 isOpen 不变，需要单独动画化实测高度。
+                withAnimation(animation) {
+                    measuredHeight = height
+                }
+            }
+    }
+}
+
+private struct SupplementDrawerHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    /// 多层内容同时上报高度时取最大值，确保抽屉边界包住完整内容。
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}

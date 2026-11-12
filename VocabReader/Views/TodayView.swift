@@ -137,6 +137,8 @@ struct TodayView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @State private var showSettings = false
     @State private var selectedArticle: Article?
+    /// 文章卡片与阅读页之间的缩放转场：卡片展开成整页，返回时缩回原卡片。
+    @Namespace private var articleTransition
     @State private var settingsSnapshot = SettingsStore.shared.articleGenerationSettings
     @StateObject private var bookmarkStore = BookmarkStore.shared
     @State private var showBookmarks = false
@@ -180,6 +182,7 @@ struct TodayView: View {
 
                             ForEach(viewModel.articles) { article in
                                 ArticleCardView(article: article)
+                                    .matchedTransitionSource(id: article.id, in: articleTransition)
                                     .contentShape(Rectangle())
                                     .onTapGesture {
                                         selectedArticle = article
@@ -266,6 +269,7 @@ struct TodayView: View {
                     translator: translationService,
                     paragraphTranslator: translationService
                 )
+                .navigationTransition(.zoom(sourceID: article.id, in: articleTransition))
             }
             .navigationDestination(isPresented: $showBookmarks) {
                 let translationService = WordTranslatorService(config: SettingsStore.shared.llmConfig)
@@ -297,6 +301,11 @@ private struct TodayVocabularyProgressView: View {
         Double(displayedCoveredCount) / Double(normalizedTarget)
     }
 
+    /// 动画中的显示值：首次出现从 0 涨到当前进度，之后每生成一篇文章从旧值涨到新值。
+    @State private var animatedProgress: Double = 0
+    @State private var animatedCount: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -306,15 +315,77 @@ private struct TodayVocabularyProgressView: View {
 
                 Spacer()
 
-                Text("\(displayedCoveredCount)/\(normalizedTarget)")
-                    .font(.system(.footnote, design: .serif).weight(.semibold))
+                CountingProgressText(count: animatedCount, target: normalizedTarget)
+                    .font(.system(.footnote, design: .serif).weight(.semibold).monospacedDigit())
                     .foregroundStyle(Color.readingTitle)
+                    // 数字跟着进度条逐个往上数，同时放大弹一下再回落，提示“刚涨了”。
+                    .keyframeAnimator(initialValue: 1.0, trigger: displayedCoveredCount) { content, scale in
+                        content.scaleEffect(scale, anchor: .trailing)
+                    } keyframes: { _ in
+                        if accessibilityReduceMotion {
+                            LinearKeyframe(1.0, duration: 0.01)
+                        } else {
+                            SpringKeyframe(1.35, duration: 0.3, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.5, spring: .bouncy)
+                        }
+                    }
             }
 
             // 显示今日目标词汇覆盖进度，避免拆分成多篇后误以为设置未生效。
-            ProgressView(value: progressValue)
-                .tint(Color.readingTitle)
+            progressBar
         }
         .padding(.top, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue("\(displayedCoveredCount)/\(normalizedTarget)")
+        .onAppear { animate(to: progressValue, count: displayedCoveredCount, delay: 0.15) }
+        .onChange(of: displayedCoveredCount) { _, newCount in
+            animate(to: progressValue, count: newCount)
+        }
+        .onChange(of: normalizedTarget) { _, _ in
+            animate(to: progressValue, count: displayedCoveredCount)
+        }
+    }
+
+    /// 自绘进度条而不是 ProgressView：系统控件的数值变化不保证跟随动画。
+    private var progressBar: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(Color.readingTitle.opacity(0.14))
+
+                Capsule(style: .continuous)
+                    .fill(Color.readingTitle)
+                    .frame(width: proxy.size.width * animatedProgress)
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+
+    private func animate(to progress: Double, count: Int, delay: Double = 0) {
+        guard !accessibilityReduceMotion else {
+            animatedProgress = progress
+            animatedCount = Double(count)
+            return
+        }
+        withAnimation(.spring(response: 0.8, dampingFraction: 0.85).delay(delay)) {
+            animatedProgress = progress
+            animatedCount = Double(count)
+        }
+    }
+}
+
+/// 可插值的计数文本：动画过程中显示中间整数，数字和进度条同步往上数。
+private struct CountingProgressText: View, Animatable {
+    var count: Double
+    let target: Int
+
+    var animatableData: Double {
+        get { count }
+        set { count = newValue }
+    }
+
+    var body: some View {
+        Text("\(Int(count.rounded()))/\(target)")
     }
 }
